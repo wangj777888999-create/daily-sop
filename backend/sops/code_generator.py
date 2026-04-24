@@ -1,4 +1,6 @@
 # backend/sops/code_generator.py
+import re
+import warnings
 from typing import Dict, List, Any, Optional
 
 
@@ -72,10 +74,11 @@ class CodeGenerator:
             self.df_vars[action] = f"df{self.df_counter}"
         return self.df_vars[action]
 
-    def _generate_read_excel(self, params: Dict, result_var: Optional[str] = None) -> str:
+    def _generate_read_excel(self, params: Dict[str, Any], result_var: Optional[str] = None) -> str:
         """生成 read_excel 代码"""
         file = params.get("file", "")
         if not file:
+            warnings.warn("read_excel 操作缺少 file 参数")
             return ""
 
         var_name = self._get_df_var("read_excel", result_var)
@@ -108,10 +111,11 @@ class CodeGenerator:
         args_str = ", ".join(parts)
         return f"{var_name} = pd.read_excel({args_str})"
 
-    def _generate_read_csv(self, params: Dict, result_var: Optional[str] = None) -> str:
+    def _generate_read_csv(self, params: Dict[str, Any], result_var: Optional[str] = None) -> str:
         """生成 read_csv 代码"""
         file = params.get("file", "")
         if not file:
+            warnings.warn("read_csv 操作缺少 file 参数")
             return ""
 
         var_name = self._get_df_var("read_csv", result_var)
@@ -136,12 +140,13 @@ class CodeGenerator:
         args_str = ", ".join(parts)
         return f"{var_name} = pd.read_csv({args_str})"
 
-    def _generate_filter(self, params: Dict, result_var: Optional[str] = None) -> str:
+    def _generate_filter(self, params: Dict[str, Any], result_var: Optional[str] = None) -> str:
         """生成 filter 代码"""
         df = params.get("df", "")
         condition = params.get("condition", "")
 
         if not df and not condition:
+            warnings.warn("filter 操作缺少必要的 df 或 condition 参数")
             return ""
 
         # 确定源 DataFrame 变量名
@@ -150,18 +155,22 @@ class CodeGenerator:
 
         var_name = self._get_df_var("filter", result_var)
 
-        # 优先使用 query 方式
+        # 优先使用 query 方式，带安全验证
         if condition:
-            return f"{var_name} = {df}.query(\"{condition}\")"
+            if not _validate_condition(condition):
+                warnings.warn(f"filter 操作检测到不安全的条件表达式: {condition}")
+                return ""
+            return f'{var_name} = {df}.query("{condition}")'
         else:
             return f"{var_name} = {df}"
 
-    def _generate_drop_columns(self, params: Dict, result_var: Optional[str] = None) -> str:
+    def _generate_drop_columns(self, params: Dict[str, Any], result_var: Optional[str] = None) -> str:
         """生成 drop_columns 代码"""
         df = params.get("df", "")
         columns = params.get("columns", "")
 
         if not df and not columns:
+            warnings.warn("drop_columns 操作缺少必要的 df 或 columns 参数")
             return ""
 
         if not df:
@@ -176,7 +185,7 @@ class CodeGenerator:
         else:
             return f"{var_name} = {df}.drop(columns=['{columns}'])"
 
-    def _generate_merge(self, params: Dict, result_var: Optional[str] = None) -> str:
+    def _generate_merge(self, params: Dict[str, Any], result_var: Optional[str] = None) -> str:
         """生成 merge 代码"""
         left_df = params.get("left_df", "")
         right_df = params.get("right_df", "")
@@ -184,6 +193,7 @@ class CodeGenerator:
         how = params.get("how", "inner")
 
         if not left_df and not right_df and not on:
+            warnings.warn("merge 操作缺少必要的 left_df、right_df 或 on 参数")
             return ""
 
         var_name = self._get_df_var("merge", result_var)
@@ -206,13 +216,14 @@ class CodeGenerator:
         args_str = ", ".join(parts)
         return f"{var_name} = pd.merge({args_str})"
 
-    def _generate_groupby(self, params: Dict, result_var: Optional[str] = None) -> str:
+    def _generate_groupby(self, params: Dict[str, Any], result_var: Optional[str] = None) -> str:
         """生成 groupby 代码"""
         df = params.get("df", "")
         by = params.get("by", "")
         agg_dict = params.get("agg", None)
 
         if not df and not by:
+            warnings.warn("groupby 操作缺少必要的 df 或 by 参数")
             return ""
 
         if not df:
@@ -237,13 +248,14 @@ class CodeGenerator:
         else:
             return f"{var_name} = {df}.groupby(by={by_part})"
 
-    def _generate_sort(self, params: Dict, result_var: Optional[str] = None) -> str:
+    def _generate_sort(self, params: Dict[str, Any], result_var: Optional[str] = None) -> str:
         """生成 sort 代码"""
         df = params.get("df", "")
         by = params.get("by", "")
         ascending = params.get("ascending", True)
 
         if not df and not by:
+            warnings.warn("sort 操作缺少必要的 df 或 by 参数")
             return ""
 
         if not df:
@@ -261,12 +273,13 @@ class CodeGenerator:
         asc_str = "True" if ascending else "False"
         return f"{var_name} = {df}.sort_values(by={by_part}, ascending={asc_str})"
 
-    def _generate_to_excel(self, params: Dict, result_var: Optional[str] = None) -> str:
+    def _generate_to_excel(self, params: Dict[str, Any], result_var: Optional[str] = None) -> str:
         """生成 to_excel 代码"""
         df = params.get("df", "")
         file = params.get("file", "")
 
         if not df and not file:
+            warnings.warn("to_excel 操作缺少必要的 df 或 file 参数")
             return ""
 
         # 确定源 DataFrame 变量名
@@ -288,12 +301,13 @@ class CodeGenerator:
         args_str = ", ".join(parts)
         return f"{df}.to_excel({args_str})"
 
-    def _generate_to_csv(self, params: Dict, result_var: Optional[str] = None) -> str:
+    def _generate_to_csv(self, params: Dict[str, Any], result_var: Optional[str] = None) -> str:
         """生成 to_csv 代码"""
         df = params.get("df", "")
         file = params.get("file", "")
 
         if not df and not file:
+            warnings.warn("to_csv 操作缺少必要的 df 或 file 参数")
             return ""
 
         # 确定源 DataFrame 变量名
@@ -314,6 +328,18 @@ class CodeGenerator:
 
         args_str = ", ".join(parts)
         return f"{df}.to_csv({args_str})"
+
+
+def _validate_condition(condition: str) -> bool:
+    """验证条件表达式是否安全，防止代码注入
+
+    只允许字母、数字、下划线、比较运算符、逻辑运算符、括号和空格
+    """
+    if not condition:
+        return True
+    # 允许：字母、数字、下划线、比较运算符、逻辑运算符、括号、引号、点号（列名可能有）
+    pattern = r'^[\w\s\+\-\*/\.\'\"=<>!&|(),]+$'
+    return bool(re.match(pattern, condition))
 
 
 def SOPToExecutableCode(sop: Dict[str, Any]) -> str:
