@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from typing import List, Optional
 from datetime import datetime
+from pydantic import BaseModel, Field
 import uuid
 import os
 import shutil
@@ -16,10 +17,45 @@ from sops.models import SOP, Step, ExecutionLog
 
 router = APIRouter()
 
+# 安全配置
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+
 # 数据目录
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "data")
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+# ==================== 响应模型 ====================
+
+class ExecutionResponse(BaseModel):
+    execution_id: str
+    status: str
+
+
+class ExecutionStatusResponse(BaseModel):
+    execution_id: str
+    sop_id: str
+    status: str
+    input_files: List[str]
+    output_file: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+class FileUploadResponse(BaseModel):
+    id: str
+    filename: str
+    path: str
+    size: int
+
+
+class FileInfoResponse(BaseModel):
+    id: str
+    filename: str
+    path: str
+    size: int
 
 # ==================== SOP 管理路由 ====================
 
@@ -128,7 +164,7 @@ async def delete_sop_by_id(sop_id: str):
 
 # ==================== 执行路由 ====================
 
-@router.post("/execute/{sop_id}")
+@router.post("/execute/{sop_id}", response_model=ExecutionResponse)
 async def execute_sop(sop_id: str, files: List[UploadFile] = File(...)):
     """执行 SOP
 
@@ -139,10 +175,22 @@ async def execute_sop(sop_id: str, files: List[UploadFile] = File(...)):
     if not sop:
         raise HTTPException(status_code=404, detail="SOP not found")
 
-    # 保存上传的文件
+    # 保存上传的文件（同步执行，非异步）
     input_files = []
     for file in files:
-        file_path = os.path.join(UPLOAD_DIR, file.filename)
+        # 验证文件大小
+        file.file.seek(0, 2)  # Seek to end
+        size = file.file.tell()
+        file.file.seek(0)  # Reset to start
+        if size > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File size {size} exceeds maximum allowed size {MAX_FILE_SIZE}"
+            )
+
+        # 使用 os.path.basename() 防止路径遍历攻击
+        safe_filename = os.path.basename(file.filename)
+        file_path = os.path.join(UPLOAD_DIR, safe_filename)
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         input_files.append(file_path)
@@ -163,7 +211,7 @@ async def execute_sop(sop_id: str, files: List[UploadFile] = File(...)):
     sop_dict = sop.model_dump(mode="json")
     code = SOPToExecutableCode(sop_dict)
 
-    # 在后台执行（简化处理，实际应该使用异步任务队列）
+    # 同步执行代码（当前请求会阻塞等待执行完成）
     try:
         # 更新状态为 running
         log.status = "running"
@@ -176,8 +224,8 @@ async def execute_sop(sop_id: str, files: List[UploadFile] = File(...)):
         if result["success"]:
             log.status = "success"
             log.completed_at = datetime.now()
-            # 如果有输出文件，记录下来
-            # 简化处理：假设 to_excel/to_csv 生成的文件在当前目录
+            # 捕获输出文件路径
+            log.output_file = result.get("output_file")
         else:
             log.status = "failed"
             log.error_message = result.get("error", "Unknown error")
@@ -196,22 +244,22 @@ async def execute_sop(sop_id: str, files: List[UploadFile] = File(...)):
     }
 
 
-@router.get("/execute/{exec_id}/status")
+@router.get("/execute/{exec_id}/status", response_model=ExecutionStatusResponse)
 async def get_execution_status(exec_id: str):
     """获取执行状态"""
     logs = get_all_logs()
     for log in logs:
         if log.id == exec_id:
-            return {
-                "execution_id": log.id,
-                "sop_id": log.sop_id,
-                "status": log.status,
-                "input_files": log.input_files,
-                "output_file": log.output_file,
-                "error_message": log.error_message,
-                "created_at": log.created_at.isoformat() if log.created_at else None,
-                "completed_at": log.completed_at.isoformat() if log.completed_at else None
-            }
+            return ExecutionStatusResponse(
+                execution_id=log.id,
+                sop_id=log.sop_id,
+                status=log.status,
+                input_files=log.input_files,
+                output_file=log.output_file,
+                error_message=log.error_message,
+                created_at=log.created_at.isoformat() if log.created_at else None,
+                completed_at=log.completed_at.isoformat() if log.completed_at else None
+            )
     raise HTTPException(status_code=404, detail="Execution not found")
 
 
@@ -235,7 +283,7 @@ async def download_execution_result(exec_id: str):
 
 # ==================== 文件路由 ====================
 
-@router.post("/upload")
+@router.post("/upload", response_model=FileUploadResponse)
 async def upload_file(file: UploadFile = File(...)):
     """上传 Excel/CSV 文件"""
     # 验证文件类型
@@ -249,6 +297,16 @@ async def upload_file(file: UploadFile = File(...)):
             detail=f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}"
         )
 
+    # 验证文件大小
+    file.file.seek(0, 2)  # Seek to end
+    size = file.file.tell()
+    file.file.seek(0)  # Reset to start
+    if size > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File size {size} exceeds maximum allowed size {MAX_FILE_SIZE}"
+        )
+
     # 保存文件
     file_id = str(uuid.uuid4())
     file_path = os.path.join(UPLOAD_DIR, f"{file_id}{ext}")
@@ -256,25 +314,25 @@ async def upload_file(file: UploadFile = File(...)):
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    return {
-        "id": file_id,
-        "filename": filename,
-        "path": file_path,
-        "size": os.path.getsize(file_path)
-    }
+    return FileUploadResponse(
+        id=file_id,
+        filename=filename,
+        path=file_path,
+        size=os.path.getsize(file_path)
+    )
 
 
-@router.get("/files/{file_id}")
+@router.get("/files/{file_id}", response_model=FileInfoResponse)
 async def get_file_info(file_id: str):
     """获取文件信息"""
     # 查找文件
     for filename in os.listdir(UPLOAD_DIR):
         if filename.startswith(file_id):
             file_path = os.path.join(UPLOAD_DIR, filename)
-            return {
-                "id": file_id,
-                "filename": filename[len(file_id)+1:] if len(filename) > len(file_id)+1 else filename,
-                "path": file_path,
-                "size": os.path.getsize(file_path)
-            }
+            return FileInfoResponse(
+                id=file_id,
+                filename=filename[len(file_id)+1:] if len(filename) > len(file_id)+1 else filename,
+                path=file_path,
+                size=os.path.getsize(file_path)
+            )
     raise HTTPException(status_code=404, detail="File not found")
