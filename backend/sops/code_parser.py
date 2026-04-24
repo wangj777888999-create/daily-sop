@@ -95,7 +95,7 @@ class CodeParser:
             self._add_step("drop_columns", {"df": df_name, "columns": columns})
 
         # 提取 df[df['col'] == value] 括号过滤
-        filter_pattern = r"(\w+)\[(\w+)\[(['\"])(.+?)\3\s*(==|!=|<|>|<=|>=)\s*(.+?)\]\]"
+        filter_pattern = r"(\w+)\[(\w+)\[(['\"])([^\]]+?)\3\s*(==|!=|<|>|<=|>=)\s*([^\]]+?)\]\]"
         for match in re.finditer(filter_pattern, code):
             df_name = match.group(1)
             column = match.group(4)
@@ -208,14 +208,21 @@ class CodeParser:
 
     def _extract_subscript_key(self, slice_node: ast.AST) -> Optional[str]:
         """从 subscript 中提取键值"""
-        # df['col'] -> slice 是 Constant/Str
+        # df['col'] -> slice 是 Constant
         if isinstance(slice_node, ast.Constant):
             return slice_node.value
-        elif isinstance(slice_node, ast.Str):
-            return slice_node.s
         # df[col_name] -> slice 是 Name
         elif isinstance(slice_node, ast.Name):
             return slice_node.id
+        # df['col1', 'col2'] -> slice 是 Tuple (多索引访问)
+        elif isinstance(slice_node, ast.Tuple):
+            keys = []
+            for elt in slice_node.elts:
+                if isinstance(elt, ast.Constant):
+                    keys.append(elt.value)
+                elif isinstance(elt, ast.Name):
+                    keys.append(elt.id)
+            return tuple(keys) if keys else None
         return None
 
     def _extract_filter(self, node: ast.Subscript) -> Optional[Dict[str, Any]]:
@@ -357,10 +364,6 @@ class CodeParser:
         """获取 AST 节点的值"""
         if isinstance(node, ast.Constant):
             return node.value
-        elif isinstance(node, ast.Str):
-            return node.s
-        elif isinstance(node, ast.Num):
-            return node.n
         elif isinstance(node, ast.Name):
             return node.id
         elif isinstance(node, ast.BinOp):
@@ -378,13 +381,15 @@ class CodeParser:
 
         # 第一个参数通常是文件路径
         if node.args:
-            params["file"] = self._get_value(node.args[0])
+            file_path = self._get_value(node.args[0])
+            if file_path and isinstance(file_path, str):
+                params["file"] = file_path
 
         # 解析关键字参数
         for keyword in node.keywords:
             key = keyword.arg
             value = self._get_value(keyword.value)
-            if key == "sheet_name":
+            if key == "sheet_name" and value and isinstance(value, str):
                 params["sheet_name"] = value
             elif key == "skiprows":
                 params["skiprows"] = value
@@ -393,7 +398,7 @@ class CodeParser:
             elif key == "header":
                 params["header"] = value
 
-        return params
+        return params if params.get("file") else {}
 
     def _extract_read_csv(self, node: ast.Call) -> Dict[str, Any]:
         """提取 pd.read_csv() 调用"""
