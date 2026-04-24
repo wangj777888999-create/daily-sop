@@ -31,6 +31,8 @@ class CodeParser:
                 self._analyze_expression(node)
             elif isinstance(node, ast.FunctionDef):
                 self._analyze_function_def(node)
+            elif isinstance(node, ast.Delete):
+                self._analyze_delete(node)
 
         # 生成 SOP
         sop_name = self._extract_sop_name(code)
@@ -83,6 +85,24 @@ class CodeParser:
             columns = match.group(2)
             self.df_variables[df_name] = "dataframe"
             self._add_step("drop_columns", {"df": df_name, "columns": columns})
+
+        # 提取 del df['col'] 删除列
+        del_pattern = r"del\s+(\w+)\[(['\"])(.+?)\2\]"
+        for match in re.finditer(del_pattern, code):
+            df_name = match.group(1)
+            columns = match.group(3)
+            self.df_variables[df_name] = "dataframe"
+            self._add_step("drop_columns", {"df": df_name, "columns": columns})
+
+        # 提取 df[df['col'] == value] 括号过滤
+        filter_pattern = r"(\w+)\[(\w+)\[(['\"])(.+?)\3\s*(==|!=|<|>|<=|>=)\s*(.+?)\]\]"
+        for match in re.finditer(filter_pattern, code):
+            df_name = match.group(1)
+            column = match.group(4)
+            op = match.group(5)
+            value = match.group(6)
+            self.df_variables[df_name] = "dataframe"
+            self._add_step("filter", {"df": df_name, "condition": f"{column} {op} {value}"})
 
         # 提取 merge
         merge_pattern = r"pd\.merge\(\s*(\w+)\s*,\s*(\w+)\s*,\s*on\s*=\s*['\"](.+?)['\"]\s*(?:,\s*how\s*=\s*['\"](.+?)['\"])?\s*\)"
@@ -139,6 +159,12 @@ class CodeParser:
                 var_name = target.id
                 if isinstance(node.value, ast.Call):
                     self._analyze_call(node.value, var_name)
+                elif isinstance(node.value, ast.Subscript):
+                    # 检查是否是 df[df['col'] == value] 语法
+                    filter_params = self._extract_filter(node.value)
+                    if filter_params:
+                        self._add_step("filter", filter_params)
+                        self.df_variables[var_name] = "dataframe"
 
     def _analyze_expression(self, node: ast.Expr):
         """分析表达式语句（无赋值的函数调用）"""
@@ -152,6 +178,94 @@ class CodeParser:
                 self._analyze_assignment(child)
             elif isinstance(child, ast.Expr):
                 self._analyze_expression(child)
+            elif isinstance(child, ast.Delete):
+                self._analyze_delete(child)
+
+    def _analyze_delete(self, node: ast.Delete):
+        """分析 del 语句"""
+        # del df[col] -> 删除列
+        # node.targets 是被删除的目标列表
+        for target in node.targets:
+            params = self._extract_del_column(target)
+            if params:
+                self._add_step("drop_columns", params)
+
+    def _extract_del_column(self, target: ast.AST) -> Optional[Dict[str, Any]]:
+        """提取 del df[col] 语法中的列名"""
+        # del df[col] 中，target 是 ast.Subscript，df 是 value，col 是 slice
+        if isinstance(target, ast.Subscript):
+            # 获取 df 名称
+            if isinstance(target.value, ast.Name):
+                df_name = target.value.id
+            else:
+                return None
+
+            # 获取列名
+            col_name = self._extract_subscript_key(target.slice)
+            if col_name:
+                return {"df": df_name, "columns": col_name}
+        return None
+
+    def _extract_subscript_key(self, slice_node: ast.AST) -> Optional[str]:
+        """从 subscript 中提取键值"""
+        # df['col'] -> slice 是 Constant/Str
+        if isinstance(slice_node, ast.Constant):
+            return slice_node.value
+        elif isinstance(slice_node, ast.Str):
+            return slice_node.s
+        # df[col_name] -> slice 是 Name
+        elif isinstance(slice_node, ast.Name):
+            return slice_node.id
+        return None
+
+    def _extract_filter(self, node: ast.Subscript) -> Optional[Dict[str, Any]]:
+        """提取 df[df['col'] == value] 括号过滤语法"""
+        # df[...] 中，value 是 df，slice 是布尔条件
+        if isinstance(node.value, ast.Name):
+            df_name = node.value.id
+        else:
+            return None
+
+        # 检查是否是布尔索引 df[df['col'] > value]
+        slice_node = node.slice
+        if isinstance(slice_node, ast.Compare):
+            # 提取比较信息
+            params = {"df": df_name}
+
+            # 左操作数通常是 df['col'] 或 df["col"]
+            if isinstance(slice_node.left, ast.Subscript):
+                col_name = self._extract_subscript_key(slice_node.left.slice)
+                if col_name:
+                    params["column"] = col_name
+
+            # 获取比较运算符
+            op_map = {
+                ast.Eq: "==",
+                ast.NotEq: "!=",
+                ast.Lt: "<",
+                ast.LtE: "<=",
+                ast.Gt: ">",
+                ast.GtE: ">=",
+            }
+            if isinstance(slice_node.ops[0], tuple(op_map.keys())):
+                params["op"] = op_map[type(slice_node.ops[0])]
+
+            # 右操作数
+            if slice_node.comparators:
+                right_val = self._get_value(slice_node.comparators[0])
+                if right_val is not None:
+                    params["value"] = right_val
+
+            # 构建条件字符串
+            if "column" in params and "op" in params and "value" in params:
+                col = params.pop("column")
+                op = params.pop("op")
+                val = params.pop("value")
+                params["condition"] = f"{col} {op} {val}"
+                params["df"] = df_name
+                return params
+
+        return None
 
     def _analyze_call(self, node: ast.Call, var_name: Optional[str]):
         """分析函数调用"""
@@ -587,3 +701,28 @@ if __name__ == "__main__":
         print(f"  步骤 {step['step']}: {step['action']} - {step['params']}")
 
     print("\n所有测试完成!")
+
+    # 测试新功能
+    print("\n" + "=" * 60)
+    print("测试 6: df[df['col'] == value] 括号过滤解析")
+    print("=" * 60)
+    code6 = '''
+    df = pd.read_excel('data.xlsx')
+    filtered = df[df['age'] > 25]
+    '''
+    sop6 = ParserCodeToSOP(code6)
+    print(f"步骤数量: {len(sop6['steps'])}")
+    for step in sop6['steps']:
+        print(f"  步骤 {step['step']}: {step['action']} - {step['params']}")
+
+    print("\n" + "=" * 60)
+    print("测试 7: del df['column'] 删除列解析")
+    print("=" * 60)
+    code7 = '''
+    df = pd.read_excel('data.xlsx')
+    del df['unused_column']
+    '''
+    sop7 = ParserCodeToSOP(code7)
+    print(f"步骤数量: {len(sop7['steps'])}")
+    for step in sop7['steps']:
+        print(f"  步骤 {step['step']}: {step['action']} - {step['params']}")
