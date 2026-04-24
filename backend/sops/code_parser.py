@@ -23,8 +23,8 @@ class CodeParser:
             # 如果 AST 解析失败，尝试用正则表达式提取
             return self._parse_with_regex(code)
 
-        # 分析 AST 节点
-        for node in ast.walk(tree):
+        # 分析 AST 节点 - 只处理顶层节点
+        for node in tree.body:
             if isinstance(node, ast.Assign):
                 self._analyze_assignment(node)
             elif isinstance(node, ast.Expr):
@@ -172,14 +172,17 @@ class CodeParser:
             self._analyze_call(node.value, None)
 
     def _analyze_function_def(self, node: ast.FunctionDef):
-        """分析函数定义"""
-        for child in ast.walk(node):
+        """分析函数定义 - 只遍历直接子节点，避免重复"""
+        for child in node.body:
             if isinstance(child, ast.Assign):
                 self._analyze_assignment(child)
             elif isinstance(child, ast.Expr):
                 self._analyze_expression(child)
             elif isinstance(child, ast.Delete):
                 self._analyze_delete(child)
+            elif isinstance(child, ast.FunctionDef):
+                # 嵌套函数定义也递归处理
+                self._analyze_function_def(child)
 
     def _analyze_delete(self, node: ast.Delete):
         """分析 del 语句"""
