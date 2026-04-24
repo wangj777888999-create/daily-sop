@@ -180,9 +180,17 @@ class CodeParser:
                 self._analyze_expression(child)
             elif isinstance(child, ast.Delete):
                 self._analyze_delete(child)
+            elif isinstance(child, ast.Return):
+                self._analyze_return(child)
             elif isinstance(child, ast.FunctionDef):
                 # 嵌套函数定义也递归处理
                 self._analyze_function_def(child)
+
+    def _analyze_return(self, node: ast.Return):
+        """分析 return 语句中的调用"""
+        if node.value and isinstance(node.value, ast.Call):
+            # 处理 return 中的链式调用
+            self._analyze_call(node.value, None)
 
     def _analyze_delete(self, node: ast.Delete):
         """分析 del 语句"""
@@ -281,6 +289,20 @@ class CodeParser:
         """分析函数调用"""
         func_name = self._get_func_name(node.func)
 
+        # 特殊处理链式调用：df.query("...").drop(...)
+        # 如果是 method chaining，先处理内层调用
+        if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Call):
+            inner_call = node.func.value
+            inner_func_name = self._get_func_name(inner_call.func)
+
+            if inner_func_name == "query":
+                inner_params = self._extract_query(inner_call)
+                if inner_params:
+                    self._add_step("filter", inner_params)
+                    if var_name:
+                        self.df_variables[var_name] = "dataframe"
+                    # 不要 return，继续处理外层调用
+
         # pd.read_excel / pd.read_csv
         if func_name == "read_excel":
             params = self._extract_read_excel(node)
@@ -314,6 +336,8 @@ class CodeParser:
             params = self._extract_merge(node)
             if params:
                 self._add_step("merge", params)
+                if var_name:
+                    self.df_variables[var_name] = "dataframe"
 
         # df.groupby
         elif func_name == "groupby":

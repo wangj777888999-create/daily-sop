@@ -59,6 +59,16 @@ class FileInfoResponse(BaseModel):
 
 # ==================== SOP 管理路由 ====================
 
+from fastapi import Body
+
+@router.post("/sops/parse", response_model=dict)
+async def parse_code(body: dict = Body(...)):
+    """解析 Python 代码为 SOP"""
+    code = body.get("code", "")
+    sop_dict = ParserCodeToSOP(code)
+    return sop_dict
+
+
 @router.get("/sops", response_model=List[dict])
 async def get_sops():
     """获取所有 SOP 列表"""
