@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 全局样式重置和基础配置 */
+:root {
+  --color-page-bg: #F7F3EC;
+  --color-sidebar-bg: #EDE7D9;
+  --color-ai-panel-bg: #EAE4D6;
+  --color-topbar-bg: #FEFCF8;
+  --color-card-bg: #FEFCF8;
+  --color-border: #C4BAA8;
+  --color-text-heading: #3D3530;
+  --color-text-body: #6B5F52;
+  --color-text-light: #9C8E82;
+  --color-accent: #5B8F7A;
+  --color-accent-light: #D6EDE7;
+  --color-amber: #C17F3A;
+  --color-blue: #3A7FC1;
+  --color-purple: #7B6BAA;
+  --color-placeholder: #DDD6C8;
+  --color-placeholder-dk: #C8BFB0;
+  --color-chip: #E5DDD0;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background-color: var(--color-page-bg);
+  color: var(--color-text-body);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 自定义滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-light);
+}
+
+/* 焦点样式 */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* 禁用选择 */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}

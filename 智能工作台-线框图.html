@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>智能工作台 — 线框图</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #F0EBE3; }
+  select { appearance: none; outline: none; cursor: pointer; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+// ─── 设计令牌 ────────────────────────────────────────────────────────────────
+const T = {
+  pageBg:    '#F7F3EC',
+  sidebar:   '#EDE7D9',
+  aiPanel:   '#EAE4D6',
+  topbar:    '#FEFCF8',
+  border:    '#C4BAA8',
+  textH:     '#3D3530',
+  textB:     '#6B5F52',
+  textL:     '#9C8E82',
+  accent:    '#5B8F7A',   // sage green
+  amber:     '#C17F3A',   // warm amber
+  blue:      '#3A7FC1',
+  purple:    '#7B6BAA',
+  ph:        '#DDD6C8',   // placeholder
+  phDk:      '#C8BFB0',
+  white:     '#FEFCF8',
+  chip:      '#E5DDD0',
+  font:      "'Caveat', cursive",
+};
+
+const NAV = [
+  { icon: '⌂', label: '工作台首页',   key: 'home'      },
+  { icon: '◈', label: 'SOP 数据分析', key: 'sop'       },
+  { icon: '✦', label: '政策报告撰写', key: 'policy'    },
+  { icon: '◉', label: '高级数据分析', key: 'analytics' },
+  { icon: '⬡', label: '数据库连接',   key: 'database'  },
+  { icon: '◗', label: '个人知识库',   key: 'knowledge' },
+];
+
+// ─── 壳体组件 ────────────────────────────────────────────────────────────────
+function Sidebar({ active }) {
+  return (
+    <div style={{ width: 220, background: T.sidebar, borderRight: `1px solid ${T.border}`, flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '18px 16px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ width: 34, height: 34, background: T.accent, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 17, flexShrink: 0 }}>✦</div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.textH, lineHeight: 1.2 }}>智能工作台</div>
+          <div style={{ fontSize: 10, color: T.textL }}>AI Workbench v2</div>
+        </div>
+      </div>
+      <div style={{ flex: 1, padding: '10px 8px' }}>
+        <div style={{ fontSize: 9, color: T.textL, padding: '4px 10px 6px', letterSpacing: 1 }}>主菜单</div>
+        {NAV.map(item => {
+          const on = active === item.key;
+          return (
+            <div key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 8, marginBottom: 2, background: on ? T.accent : 'transparent', color: on ? '#fff' : T.textB, fontSize: 13 }}>
+              <span style={{ width: 16, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
+              <span>{item.label}</span>
+              {on && <span style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,0.6)', flexShrink: 0 }} />}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ padding: '12px 16px', borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ width: 30, height: 30, borderRadius: '50%', background: T.phDk, flexShrink: 0 }} />
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: T.textH }}>张三</div>
+          <div style={{ fontSize: 10, color: T.textL }}>管理员</div>
+        </div>
+        <span style={{ marginLeft: 'auto', fontSize: 13, color: T.textL }}>⋯</span>
+      </div>
+    </div>
+  );
+}
+
+function TopBar({ crumbs, actions }) {
+  return (
+    <div style={{ height: 52, background: T.topbar, borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', padding: '0 20px', gap: 12, flexShrink: 0 }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
+        {crumbs.map((c, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && <span style={{ color: T.border }}>/</span>}
+            <span style={{ color: i === crumbs.length - 1 ? T.textH : T.textL }}>{c}</span>
+          </React.Fragment>
+        ))}
+      </div>
+      {actions && <div style={{ display: 'flex', gap: 6 }}>{actions}</div>}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <WChip>🔔</WChip>
+        <WChip>⚙</WChip>
+        <div style={{ width: 26, height: 26, borderRadius: '50%', background: T.phDk }} />
+      </div>
+    </div>
+  );
+}
+
+function AIPanel() {
+  return (
+    <div style={{ width: 280, background: T.aiPanel, borderLeft: `1px solid ${T.border}`, flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '14px 16px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.accent }} />
+        <span style={{ fontSize: 13, fontWeight: 700, color: T.textH }}>AI 助理</span>
+        <div style={{ marginLeft: 'auto', fontSize: 10, background: '#D6EDE7', color: T.accent, padding: '2px 8px', borderRadius: 10, fontWeight: 700 }}>Claude</div>
+      </div>
+      <div style={{ flex: 1, padding: '12px', display: 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden' }}>
+        <AIMsg ai>你好！我是 AI 助理，随时可以帮你分析数据、撰写报告或解答问题。</AIMsg>
+        <AIMsg>帮我分析这份数据的关键趋势</AIMsg>
+        <AIMsg ai>好的，数据显示 Q3 同比增长 18%，华东区域贡献最大，以下是详细分析……</AIMsg>
+        <div style={{ display: 'flex', gap: 3, padding: '2px 6px' }}>
+          {[0,1,2].map(i => <div key={i} style={{ width: 5, height: 5, borderRadius: '50%', background: T.textL }} />)}
+        </div>
+      </div>
+      <div style={{ padding: '8px 12px', borderTop: `1px solid ${T.border}` }}>
+        <div style={{ fontSize: 10, color: T.textL, marginBottom: 5 }}>快捷操作</div>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {['总结', '生成报告', '数据洞察', '提问'].map(t => (
+            <div key={t} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 10, background: T.chip, color: T.textB, border: `1px solid ${T.border}` }}>{t}</div>
+          ))}
+        </div>
+      </div>
+      <div style={{ padding: '10px 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: T.white, border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 10px' }}>
+          <span style={{ flex: 1, fontSize: 11, color: T.textL }}>输入问题或指令…</span>
+          <div style={{ width: 22, height: 22, borderRadius: 5, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12 }}>↑</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AIMsg({ ai, children }) {
+  return (
+    <div style={{
+      background: ai ? T.white : T.accent,
+      border: ai ? `1px solid ${T.border}` : 'none',
+      borderRadius: ai ? '4px 10px 10px 10px' : '10px 4px 10px 10px',
+      padding: '7px 10px', fontSize: 11, color: ai ? T.textB : '#fff',
+      lineHeight: 1.5, maxWidth: '92%', alignSelf: ai ? 'flex-start' : 'flex-end',
+    }}>{children}</div>
+  );
+}
+
+function Shell({ page, crumbs, actions, children }) {
+  return (
+    <div style={{ display: 'flex', width: 1440, height: 900, background: T.pageBg, fontFamily: T.font, overflow: 'hidden' }}>
+      <Sidebar active={page} />
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <TopBar crumbs={crumbs} actions={actions} />
+        <div style={{ flex: 1, padding: '20px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {children}
+        </div>
+      </div>
+      <AIPanel />
+    </div>
+  );
+}
+
+// ─── 通用 WF 组件 ────────────────────────────────────────────────────────────
+function WChip({ children, style }) {
+  return <div style={{ padding: '4px 9px', borderRadius: 6, background: T.chip, border: `1px solid ${T.border}`, fontSize: 11, color: T.textB, display: 'inline-flex', alignItems: 'center', cursor: 'pointer', ...style }}>{children}</div>;
+}
+
+function WBtn({ label, primary, small, icon, style }) {
+  return (
+    <div style={{ padding: small ? '5px 11px' : '8px 18px', borderRadius: 8, fontSize: small ? 11 : 12, background: primary ? T.accent : T.chip, color: primary ? '#fff' : T.textB, border: `1px solid ${primary ? T.accent : T.border}`, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', flexShrink: 0, ...style }}>
+      {icon && <span>{icon}</span>}{label}
+    </div>
+  );
+}
+
+function WBox({ label, w, h, dashed, style, children }) {
+  return (
+    <div style={{ width: w, height: h, background: T.ph, border: `${dashed ? '1.5px dashed' : '1px solid'} ${T.border}`, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T.textL, flexShrink: 0, ...style }}>
+      {children || <span style={{ textAlign: 'center', padding: 8, lineHeight: 1.5 }}>{label}</span>}
+    </div>
+  );
+}
+
+function WCard({ style, children }) {
+  return <div style={{ background: T.white, border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px', ...style }}>{children}</div>;
+}
+
+function WRow({ label, action, style }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 8, ...style }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: T.textH }}>{label}</div>
+      {action && <div style={{ marginLeft: 'auto', fontSize: 11, color: T.accent, cursor: 'pointer' }}>{action}</div>}
+    </div>
+  );
+}
+
+function WMetric({ label, value, delta }) {
+  return (
+    <WCard style={{ flex: 1 }}>
+      <div style={{ fontSize: 10, color: T.textL, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: T.textH }}>{value}</div>
+      {delta != null && <div style={{ fontSize: 10, color: delta >= 0 ? T.accent : T.amber, marginTop: 2 }}>{delta >= 0 ? '↑' : '↓'} {Math.abs(delta)}%</div>}
+    </WCard>
+  );
+}
+
+function WStep({ n, label, active, done }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 12px', borderRadius: 8, background: active ? T.accent : done ? '#D6EDE7' : T.chip, border: `1px solid ${active ? T.accent : done ? T.accent : T.border}`, flexShrink: 0 }}>
+      <div style={{ width: 20, height: 20, borderRadius: '50%', background: active ? '#fff' : done ? T.accent : T.phDk, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: active ? T.accent : done ? '#fff' : T.textL, fontWeight: 700, flexShrink: 0 }}>{done ? '✓' : n}</div>
+      <span style={{ fontSize: 12, color: active ? '#fff' : T.textB, whiteSpace: 'nowrap' }}>{label}</span>
+    </div>
+  );
+}
+
+function WTable({ cols, rows }) {
+  return (
+    <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, overflow: 'hidden', fontSize: 11 }}>
+      <div style={{ display: 'flex', background: T.chip, borderBottom: `1px solid ${T.border}` }}>
+        {cols.map((c, i) => <div key={i} style={{ flex: 1, padding: '7px 10px', color: T.textB, fontWeight: 700 }}>{c}</div>)}
+      </div>
+      {Array.from({ length: rows }).map((_, ri) => (
+        <div key={ri} style={{ display: 'flex', borderBottom: ri < rows - 1 ? `1px solid ${T.border}` : 'none', background: ri % 2 === 0 ? T.white : T.pageBg }}>
+          {cols.map((_, ci) => (
+            <div key={ci} style={{ flex: 1, padding: '6px 10px' }}>
+              <div style={{ height: 10, background: T.ph, borderRadius: 3, width: ci === 0 ? '65%' : '45%' }} />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Divider() {
+  return <div style={{ flex: 1, height: 1, background: T.border, opacity: 0.6, alignSelf: 'center' }} />;
+}
+
+// ─── 首页 A: 服务卡片网格 ────────────────────────────────────────────────────
+function HomeA() {
+  const services = [
+    { icon: '◈', name: 'SOP 数据分析', desc: '上传数据→选择 SOP→自动分析→生成报告', color: T.accent, tag: '常用' },
+    { icon: '✦', name: '政策报告撰写', desc: 'AI 辅助主题设定、大纲生成与内容撰写', color: T.amber, tag: '新' },
+    { icon: '◉', name: '高级数据分析', desc: '复杂统计、可视化图表、预测建模', color: T.purple, tag: '' },
+    { icon: '⬡', name: '数据库连接', desc: '连接 PostgreSQL / MySQL / SQLite', color: T.blue, tag: '' },
+    { icon: '◗', name: '个人知识库', desc: '文档管理、语义检索、RAG 增强', color: '#8A6F3A', tag: '' },
+    { icon: '+', name: '即将推出',     desc: '更多功能模块正在开发中…', color: T.textL, tag: '' },
+  ];
+  return (
+    <Shell page="home" crumbs={['工作台', '首页']}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: T.textH }}>早上好，张三 👋</div>
+          <div style={{ fontSize: 13, color: T.textL, marginTop: 2 }}>今天有 3 项任务待处理</div>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <WBtn label="查看任务" icon="📋" />
+          <WBtn label="新建分析" primary icon="＋" />
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+        <WMetric label="本月分析次数" value="42" delta={12} />
+        <WMetric label="生成报告" value="8" delta={5} />
+        <WMetric label="知识库文档" value="126" />
+        <WMetric label="本周使用时长" value="18h" />
+      </div>
+      <WRow label="核心功能入口" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, flex: 1 }}>
+        {services.map((s, i) => (
+          <WCard key={i} style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <div style={{ width: 42, height: 42, borderRadius: 11, background: s.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, color: s.color }}>{s.icon}</div>
+              {s.tag && <div style={{ fontSize: 9, padding: '2px 7px', borderRadius: 10, background: s.color + '22', color: s.color, fontWeight: 700 }}>{s.tag}</div>}
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: T.textH }}>{s.name}</div>
+            <div style={{ fontSize: 11, color: T.textL, lineHeight: 1.5 }}>{s.desc}</div>
+            <div style={{ marginTop: 'auto', fontSize: 11, color: s.color, fontWeight: 600 }}>立即使用 →</div>
+          </WCard>
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+// ─── 首页 B: 仪表盘概览 ───────────────────────────────────────────────────────
+function HomeB() {
+  return (
+    <Shell page="home" crumbs={['工作台', '首页 — 仪表盘']}>
+      <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <WMetric label="本月分析次数" value="42" delta={12} />
+            <WMetric label="报告生成" value="8" delta={5} />
+            <WMetric label="知识库文档" value="126" />
+          </div>
+          <WCard style={{ flex: 1 }}>
+            <WRow label="使用趋势" action="切换周期 ▾" />
+            <WBox label="折线图 + 柱状图 — 近 7 天各模块使用量" w="100%" h={160} dashed />
+          </WCard>
+          <WCard>
+            <WRow label="近期任务" action="查看全部" />
+            {['SOP 分析 — 销售数据 Q3', '政策报告 — 数字经济政策研究', '数据库查询 — 用户行为分析'].map((t, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < 2 ? `1px solid ${T.border}` : 'none' }}>
+                <div style={{ width: 7, height: 7, borderRadius: '50%', background: [T.accent, T.amber, T.purple][i], flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 12, color: T.textB }}>{t}</span>
+                <span style={{ fontSize: 10, color: T.textL }}>2 小时前</span>
+                <WChip style={{ fontSize: 10 }}>继续</WChip>
+              </div>
+            ))}
+          </WCard>
+        </div>
+        <div style={{ width: 256, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <WCard>
+            <WRow label="快速入口" />
+            {[['◈','新建 SOP 分析'],['✦','撰写政策报告'],['⬡','连接数据库'],['◗','上传知识文档']].map(([icon, a], i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: i < 3 ? `1px solid ${T.border}` : 'none', cursor: 'pointer' }}>
+                <div style={{ width: 28, height: 28, borderRadius: 6, background: T.chip, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>{icon}</div>
+                <span style={{ fontSize: 12, color: T.textB }}>{a}</span>
+                <span style={{ marginLeft: 'auto', color: T.textL }}>→</span>
+              </div>
+            ))}
+          </WCard>
+          <WCard style={{ flex: 1 }}>
+            <WRow label="本周日历" />
+            <WBox label="迷你日历组件" w="100%" h={120} dashed />
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 10, color: T.textL, marginBottom: 6 }}>今日日程</div>
+              {['10:00  数据汇报准备', '14:30  政策文稿审核'].map((e, i) => (
+                <div key={i} style={{ fontSize: 11, color: T.textB, padding: '5px 0', borderBottom: i < 1 ? `1px dashed ${T.border}` : 'none', display: 'flex', gap: 6 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.accent, flexShrink: 0, marginTop: 4 }} />{e}
+                </div>
+              ))}
+            </div>
+          </WCard>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+// ─── SOP A: 步骤向导 ─────────────────────────────────────────────────────────
+function SopA() {
+  return (
+    <Shell page="sop" crumbs={['工作台', 'SOP 分析', '新建分析']}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 20 }}>
+        <WStep n={1} label="上传数据" done />
+        <Divider />
+        <WStep n={2} label="选择 SOP" active />
+        <Divider />
+        <WStep n={3} label="配置参数" />
+        <Divider />
+        <WStep n={4} label="生成报告" />
+      </div>
+      <div style={{ display: 'flex', gap: 14, flex: 1, minHeight: 0 }}>
+        <WCard style={{ width: 272, display: 'flex', flexDirection: 'column' }}>
+          <WRow label="SOP 模板库" />
+          <div style={{ background: T.pageBg, border: `1px solid ${T.border}`, borderRadius: 6, padding: '6px 10px', marginBottom: 10, fontSize: 11, color: T.textL }}>🔍 搜索模板…</div>
+          {['销售数据分析', '财务报表分析', '运营指标分析', '用户行为分析', '供应链分析'].map((t, i) => (
+            <div key={i} style={{ padding: '9px 11px', borderRadius: 8, marginBottom: 5, cursor: 'pointer', background: i === 1 ? T.accent : T.pageBg, border: `1px solid ${i === 1 ? T.accent : T.border}`, fontSize: 12, color: i === 1 ? '#fff' : T.textB, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              {t}
+              {i === 1 && <span style={{ fontSize: 10, background: 'rgba(255,255,255,0.25)', padding: '1px 6px', borderRadius: 8 }}>已选</span>}
+            </div>
+          ))}
+        </WCard>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
+          <WCard>
+            <WRow label="财务报表分析 SOP" />
+            <div style={{ fontSize: 11, color: T.textL, marginBottom: 10, lineHeight: 1.5 }}>适用于月度/季度财务报表，自动计算关键指标并生成分析摘要</div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+              {['收入分析', '成本拆解', '利润率', '同比对比'].map(t => <div key={t} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 10, background: '#D6EDE7', color: T.accent, border: `1px solid ${T.accent}` }}>{t}</div>)}
+            </div>
+            <div style={{ fontSize: 11, color: T.textB }}>⏱ 预计分析时间：约 2 分钟</div>
+          </WCard>
+          <WCard style={{ flex: 1 }}>
+            <WRow label="已上传数据预览" />
+            <WTable cols={['月份', '收入(万)', '成本(万)', '净利润', '增长率']} rows={6} />
+          </WCard>
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
+        <WBtn label="← 上一步" />
+        <WBtn label="开始分析 →" primary />
+      </div>
+    </Shell>
+  );
+}
+
+// ─── SOP B: 分屏操作 ─────────────────────────────────────────────────────────
+function SopB() {
+  return (
+    <Shell page="sop" crumbs={['工作台', 'SOP 分析']}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+        <WBtn label="📤 上传文件" />
+        <div style={{ width: 1, height: 22, background: T.border }} />
+        <span style={{ fontSize: 11, color: T.textL }}>当前文件：</span>
+        <WChip>财务报表_2024Q3.xlsx</WChip>
+        <div style={{ marginLeft: 'auto' }}>
+          <WBtn label="▶ 运行分析" primary />
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 14, flex: 1, minHeight: 0 }}>
+        <WCard style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <WRow label="数据预览" />
+          <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+            {['Sheet1', 'Sheet2', 'Sheet3'].map((s, i) => <div key={s} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: i === 0 ? T.accent : T.chip, color: i === 0 ? '#fff' : T.textB, cursor: 'pointer' }}>{s}</div>)}
+          </div>
+          <WTable cols={['日期', '科目', '借方', '贷方', '余额']} rows={9} />
+        </WCard>
+        <div style={{ width: 290, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <WCard>
+            <WRow label="SOP 配置" />
+            <div style={{ fontSize: 10, color: T.textL, marginBottom: 5 }}>分析模板</div>
+            <div style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: `1px solid ${T.border}`, background: T.pageBg, fontSize: 12, color: T.textB, marginBottom: 12 }}>财务报表分析 ▾</div>
+            <div style={{ fontSize: 10, color: T.textL, marginBottom: 6 }}>分析维度</div>
+            {['收入趋势', '成本结构', '利润分析', '同比环比'].map((d, i) => (
+              <div key={d} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0' }}>
+                <div style={{ width: 14, height: 14, borderRadius: 3, background: i < 3 ? T.accent : T.chip, border: `1px solid ${i < 3 ? T.accent : T.border}`, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: T.textB }}>{d}</span>
+              </div>
+            ))}
+          </WCard>
+          <WCard>
+            <WRow label="分析进度" />
+            <WBox label="进度条 / 状态指示器" w="100%" h={70} dashed />
+          </WCard>
+          <WCard style={{ flex: 1 }}>
+            <WRow label="结果摘要" />
+            <WBox label="分析完成后自动显示摘要" w="100%" h={110} dashed />
+            <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+              <WBtn label="查看完整报告" small primary style={{ flex: 1, justifyContent: 'center' }} />
+              <WBtn label="导出" small />
+            </div>
+          </WCard>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+// ─── 政策报告 A: 文档编辑器 ──────────────────────────────────────────────────
+function PolicyA() {
+  return (
+    <Shell page="policy" crumbs={['工作台', '政策报告', '数字经济政策研究报告']}>
+      <div style={{ display: 'flex', gap: 14, flex: 1, minHeight: 0 }}>
+        <WCard style={{ width: 230, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+          <WRow label="文档大纲" />
+          {[
+            { d: 0, t: '1. 引言', a: false },
+            { d: 0, t: '2. 背景分析', a: true },
+            { d: 1, t: '2.1 国内形势', a: false },
+            { d: 1, t: '2.2 国际对比', a: false },
+            { d: 0, t: '3. 核心政策', a: false },
+            { d: 1, t: '3.1 产业政策', a: false },
+            { d: 1, t: '3.2 监管框架', a: false },
+            { d: 0, t: '4. 建议与展望', a: false },
+          ].map((item, i) => (
+            <div key={i} style={{ padding: '6px 8px', paddingLeft: 8 + item.d * 16, borderRadius: 6, fontSize: 12, background: item.a ? '#D6EDE7' : 'transparent', color: item.a ? T.accent : T.textB, marginBottom: 2, cursor: 'pointer', borderLeft: `2px solid ${item.a ? T.accent : 'transparent'}` }}>
+              {item.t}
+            </div>
+          ))}
+          <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: `1px solid ${T.border}` }}>
+            <WBtn label="＋ 添加章节" style={{ width: '100%', justifyContent: 'center', fontSize: 11 }} />
+          </div>
+        </WCard>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <div style={{ background: T.white, border: `1px solid ${T.border}`, borderBottom: 'none', borderRadius: '10px 10px 0 0', padding: '8px 12px', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
+            {['B','I','U','|','H1','H2','|','列表','引用','|','插图','AI润色'].map((t, i) => (
+              t === '|'
+                ? <div key={i} style={{ width: 1, height: 16, background: T.border, margin: '0 2px' }} />
+                : <WChip key={i} style={{ fontSize: 10, color: t.startsWith('AI') ? T.accent : undefined, background: t.startsWith('AI') ? '#D6EDE7' : undefined }}>{t}</WChip>
+            ))}
+          </div>
+          <WCard style={{ flex: 1, borderRadius: '0 0 10px 10px', overflow: 'hidden' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: T.textH, marginBottom: 10 }}>2. 背景分析</div>
+            {[100,88,75,100,60].map((w,i) => <div key={i} style={{ height: 12, background: T.ph, borderRadius: 3, width: `${w}%`, marginBottom: 7 }} />)}
+            <div style={{ height: 10 }} />
+            <div style={{ fontSize: 13, fontWeight: 600, color: T.textH, marginBottom: 8 }}>2.1 国内形势</div>
+            {[95,80,100,68].map((w,i) => <div key={i} style={{ height: 12, background: T.ph, borderRadius: 3, width: `${w}%`, marginBottom: 7 }} />)}
+            <div style={{ margin: '14px 0', padding: '10px 12px', background: '#D6EDE7', border: `1px solid ${T.accent}`, borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: T.accent, marginBottom: 8 }}>✦ AI 建议：可引用《数字中国建设整体布局规划》以增强论据的权威性。</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <WBtn label="采纳" small primary />
+                <WBtn label="忽略" small />
+              </div>
+            </div>
+          </WCard>
+        </div>
+        <div style={{ width: 210, display: 'flex', flexDirection: 'column', gap: 10, flexShrink: 0 }}>
+          <WCard>
+            <WRow label="文档信息" />
+            {[['字数','4,280'],['章节数','8'],['状态','草稿'],['上次保存','2分钟前']].map(([k,v]) => (
+              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, padding: '5px 0', borderBottom: `1px solid ${T.border}`, color: T.textB }}>
+                <span style={{ color: T.textL }}>{k}</span><span>{v}</span>
+              </div>
+            ))}
+          </WCard>
+          <WCard>
+            <WRow label="导出" />
+            {['导出 Word (.docx)','导出 PDF','复制全文 Markdown'].map(a => <WBtn key={a} label={a} style={{ width: '100%', justifyContent: 'center', marginBottom: 6, fontSize: 11 }} />)}
+          </WCard>
+          <WCard style={{ flex: 1 }}>
+            <WRow label="参考资料" />
+            {['政策文件数据库', '知识库引用 (3)', '网络资料 (7)'].map((r, i) => (
+              <div key={i} style={{ fontSize: 11, color: T.textB, padding: '5px 0', borderBottom: i < 2 ? `1px solid ${T.border}` : 'none' }}>📎 {r}</div>
+            ))}
+          </WCard>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+// ─── 政策报告 B: 引导式流程 ──────────────────────────────────────────────────
+function PolicyB() {
+  return (
+    <Shell page="policy" crumbs={['工作台', '政策报告', '新建报告']}>
+      <div style={{ maxWidth: 780, margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <WStep n={1} label="主题设定" done />
+          <Divider />
+          <WStep n={2} label="大纲生成" active />
+          <Divider />
+          <WStep n={3} label="内容撰写" />
+          <Divider />
+          <WStep n={4} label="导出保存" />
+        </div>
+        <WCard>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <WRow label="AI 生成大纲" style={{ marginBottom: 0, flex: 1 }} />
+            <div style={{ fontSize: 10, background: '#D6EDE7', color: T.accent, padding: '2px 8px', borderRadius: 10, fontWeight: 700 }}>已完成</div>
+            <WBtn label="重新生成" small />
+          </div>
+          <div style={{ fontSize: 12, color: T.textL, marginBottom: 12 }}>主题：数字经济政策研究报告 · 字数目标：5000 字</div>
+          {['一、引言与研究背景','二、国内外数字经济发展现状','三、核心政策框架分析','四、产业影响与机遇研判','五、政策建议与未来展望','六、结语'].map((item, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 8, marginBottom: 6, background: T.pageBg, border: `1px solid ${T.border}` }}>
+              <div style={{ width: 22, height: 22, borderRadius: '50%', background: T.chip, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: T.textL, flexShrink: 0 }}>{i+1}</div>
+              <span style={{ flex: 1, fontSize: 12, color: T.textB }}>{item}</span>
+              <WChip style={{ fontSize: 10 }}>✎</WChip>
+              <WChip style={{ fontSize: 10 }}>☰</WChip>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <WBtn label="＋ 添加章节" small />
+            <WBtn label="调整顺序" small />
+          </div>
+        </WCard>
+        <WCard>
+          <WRow label="参考资料来源" />
+          <div style={{ display: 'flex', gap: 12 }}>
+            <WBox label="拖拽上传\n参考文件" w={180} h={72} dashed />
+            <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 6, alignContent: 'flex-start' }}>
+              <WChip>✓ 知识库检索</WChip>
+              <WChip>✓ 政策数据库</WChip>
+              <WChip style={{ color: T.textL }}>○ 网络实时</WChip>
+            </div>
+          </div>
+        </WCard>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <WBtn label="← 返回修改" />
+          <WBtn label="开始撰写内容 →" primary />
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+// ─── 高级分析 A: 图表仪表盘 ──────────────────────────────────────────────────
+function AnalyticsA() {
+  return (
+    <Shell page="analytics" crumbs={['工作台', '高级数据分析']}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+        <WBtn label="📂 加载数据集" />
+        <WChip>财务数据_2024.xlsx</WChip>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          <WBtn label="🔄 刷新" />
+          <WBtn label="📤 导出报告" primary />
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+        <WMetric label="数据行数" value="12,847" />
+        <WMetric label="字段数" value="24" />
+        <WMetric label="异常值" value="3%" delta={-2} />
+        <WMetric label="缺失率" value="0.8%" />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, flex: 1, minHeight: 0 }}>
+        <WCard style={{ display: 'flex', flexDirection: 'column' }}>
+          <WRow label="收入趋势分析" action="配置图表 ⚙" />
+          <WBox label="折线图 — 月度收入趋势 (12M)" w="100%" style={{ flex: 1, minHeight: 120 }} dashed />
+        </WCard>
+        <WCard style={{ display: 'flex', flexDirection: 'column' }}>
+          <WRow label="成本结构分布" action="配置图表 ⚙" />
+          <WBox label="环形图 — 成本构成占比" w="100%" style={{ flex: 1, minHeight: 120 }} dashed />
+        </WCard>
+        <WCard style={{ display: 'flex', flexDirection: 'column' }}>
+          <WRow label="区域销售分布" action="配置图表 ⚙" />
+          <WBox label="地图热力图 — 区域销售分布" w="100%" style={{ flex: 1, minHeight: 120 }} dashed />
+        </WCard>
+        <WCard style={{ display: 'flex', flexDirection: 'column' }}>
+          <WRow label="关键指标相关性" action="配置图表 ⚙" />
+          <WBox label="散点图矩阵 — 多指标相关性" w="100%" style={{ flex: 1, minHeight: 120 }} dashed />
+        </WCard>
+      </div>
+    </Shell>
+  );
+}
+
+// ─── 高级分析 B: 对话驱动 ────────────────────────────────────────────────────
+function AnalyticsB() {
+  return (
+    <Shell page="analytics" crumbs={['工作台', '高级数据分析', '对话模式']}>
+      <div style={{ display: 'flex', gap: 14, flex: 1, minHeight: 0 }}>
+        <div style={{ width: 300, display: 'flex', flexDirection: 'column', gap: 12, flexShrink: 0 }}>
+          <WCard>
+            <WRow label="数据源" />
+            <WBox label="拖拽上传\nExcel / CSV / JSON" w="100%" h={76} dashed />
+            <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+              <WBtn label="数据库" small />
+              <WBtn label="知识库" small />
+            </div>
+          </WCard>
+          <WCard style={{ flex: 1 }}>
+            <WRow label="数据概览" />
+            {[['行数','12,847'],['字段数','24'],['数值列','18'],['文本列','6'],['缺失值','0.8%'],['重复行','23']].map(([k,v]) => (
+              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, padding: '5px 0', borderBottom: `1px solid ${T.border}`, color: T.textB }}>
+                <span style={{ color: T.textL }}>{k}</span><span style={{ fontWeight: 600 }}>{v}</span>
+              </div>
+            ))}
+          </WCard>
+        </div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+          <WCard style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'hidden' }}>
+            <WRow label="分析结果" />
+            <div style={{ padding: '8px 10px', background: T.pageBg, borderRadius: 8, border: `1px solid ${T.border}`, fontSize: 11, color: T.textL }}>❓ 各季度收入对比如何？</div>
+            <WBox label="柱状图 — Q1 到 Q4 季度收入对比" w="100%" h={120} dashed />
+            <div style={{ padding: '9px 11px', background: '#D6EDE7', borderRadius: 8, border: `1px solid ${T.accent}`, fontSize: 11, color: T.textB }}>
+              ✦ Q3 收入最高达 340 万，同比增长 18%；Q4 环比下降 5%，建议关注季节因素。
+            </div>
+            <div style={{ padding: '8px 10px', background: T.pageBg, borderRadius: 8, border: `1px solid ${T.border}`, fontSize: 11, color: T.textL }}>❓ 成本中哪类占比最大？</div>
+            <WBox label="饼图 — 成本结构细分" w="100%" h={100} dashed />
+          </WCard>
+          <WCard>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ flex: 1, background: T.pageBg, border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, color: T.textL }}>用自然语言提问，例如："找出增长最快的产品线"</div>
+              <WBtn label="分析" primary />
+            </div>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+              {['趋势分析','异常检测','相关性','预测建模','数据概貌'].map(t => <WChip key={t} style={{ fontSize: 10 }}>{t}</WChip>)}
+            </div>
+          </WCard>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+// ─── 数据库 A: SQL 编辑器 ────────────────────────────────────────────────────
+function DatabaseA() {
+  return (
+    <Shell page="database" crumbs={['工作台', '数据库连接', 'PostgreSQL — 生产库']}>
+      <div style={{ display: 'flex', gap: 14, flex: 1, minHeight: 0 }}>
+        <WCard style={{ width: 220, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+          <WRow label="数据库结构" />
+          <div style={{ background: T.pageBg, border: `1px solid ${T.border}`, borderRadius: 6, padding: '5px 8px', marginBottom: 8, fontSize: 11, color: T.textL }}>🔍 搜索表/字段</div>
+          {['users','orders','products','analytics'].map((tbl, i) => (
+            <div key={tbl}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 6px', fontSize: 12, color: T.textB, cursor: 'pointer', borderRadius: 6, background: i === 1 ? T.chip : 'transparent' }}>
+                <span style={{ fontSize: 10 }}>{i === 1 ? '▼' : '▶'}</span><span>⬡</span><span>{tbl}</span>
+              </div>
+              {i === 1 && ['id','user_id','amount','status','created_at'].map(col => (
+                <div key={col} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px 4px 22px', fontSize: 10, color: T.textL }}>
+                  <span>—</span><span style={{ flex: 1 }}>{col}</span><span style={{ fontSize: 9, color: T.ph }}>num</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </WCard>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+          <WCard>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: T.textH }}>SQL 编辑器</span>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                <WBtn label="格式化" small />
+                <WBtn label="▶ 执行" primary small />
+              </div>
+            </div>
+            <div style={{ background: '#F2EDE4', border: `1px solid ${T.border}`, borderRadius: 8, padding: '12px 14px', fontFamily: "'Courier New', monospace", fontSize: 12, color: T.textH, lineHeight: 1.8 }}>
+              <span style={{ color: T.accent }}>SELECT</span> o.id, u.name, o.amount, o.status<br/>
+              <span style={{ color: T.accent }}>FROM</span> orders o <span style={{ color: T.accent }}>JOIN</span> users u <span style={{ color: T.accent }}>ON</span> o.user_id = u.id<br/>
+              <span style={{ color: T.accent }}>WHERE</span> o.created_at {'>'} <span style={{ color: T.amber }}>'2024-01-01'</span><br/>
+              <span style={{ color: T.accent }}>ORDER BY</span> o.amount <span style={{ color: T.accent }}>DESC</span> <span style={{ color: T.accent }}>LIMIT</span> 100;
+            </div>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              {['历史查询','保存查询','AI 优化 SQL'].map(t => <WChip key={t} style={{ fontSize: 10, color: t.startsWith('AI') ? T.accent : undefined }}>{t}</WChip>)}
+            </div>
+          </WCard>
+          <WCard style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: T.textH }}>查询结果</span>
+              <span style={{ fontSize: 11, color: T.textL }}>共 847 条 · 0.23s</span>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                <WBtn label="📊 可视化" small />
+                <WBtn label="导出 CSV" small />
+              </div>
+            </div>
+            <WTable cols={['ID','用户名','金额','状态','创建时间']} rows={7} />
+          </WCard>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+// ─── 数据库 B: 可视化查询 ────────────────────────────────────────────────────
+function DatabaseB() {
+  return (
+    <Shell page="database" crumbs={['工作台', '数据库连接', '可视化查询构建器']}>
+      <div style={{ display: 'flex', gap: 14, flex: 1, minHeight: 0 }}>
+        <WCard style={{ width: 190, flexShrink: 0 }}>
+          <WRow label="数据表" />
+          {['users','orders','products','analytics','inventory'].map(t => (
+            <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 6, marginBottom: 5, background: T.pageBg, border: `1px solid ${T.border}`, fontSize: 12, color: T.textB, cursor: 'grab' }}>
+              <span style={{ fontSize: 10 }}>⬡</span><span style={{ flex: 1 }}>{t}</span><span style={{ fontSize: 9, color: T.textL }}>拖拽</span>
+            </div>
+          ))}
+        </WCard>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+          <WCard style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <WRow label="可视化查询画布" />
+            <div style={{ flex: 1, background: T.pageBg, border: `1.5px dashed ${T.border}`, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 36, position: 'relative', minHeight: 180 }}>
+              {/* Table A */}
+              <div style={{ background: T.white, border: `1px solid ${T.border}`, borderRadius: 8, width: 140, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div style={{ background: T.accent, padding: '7px 10px', fontSize: 11, color: '#fff', fontWeight: 700 }}>users</div>
+                {['id','name','email','created_at'].map(f => <div key={f} style={{ padding: '4px 10px', fontSize: 10, color: T.textB, borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between' }}><span>{f}</span><span style={{ color: T.textL }}>str</span></div>)}
+              </div>
+              {/* Join */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                <div style={{ width: 36, height: 1, background: T.accent }} />
+                <div style={{ fontSize: 9, color: T.accent, background: '#D6EDE7', padding: '2px 7px', borderRadius: 10, fontWeight: 700 }}>JOIN</div>
+                <div style={{ width: 36, height: 1, background: T.accent }} />
+              </div>
+              {/* Table B */}
+              <div style={{ background: T.white, border: `2px solid ${T.amber}`, borderRadius: 8, width: 140, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div style={{ background: T.amber, padding: '7px 10px', fontSize: 11, color: '#fff', fontWeight: 700 }}>orders</div>
+                {['id','user_id','amount','status'].map(f => <div key={f} style={{ padding: '4px 10px', fontSize: 10, color: T.textB, borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between' }}><span>{f}</span><span style={{ color: T.textL }}>num</span></div>)}
+              </div>
+              <div style={{ position: 'absolute', bottom: 8, right: 10, fontSize: 10, color: T.textL }}>拖拽数据表到画布以建立关联</div>
+            </div>
+          </WCard>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <WCard style={{ flex: 1 }}>
+              <WRow label="筛选条件" />
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <WChip>amount {'>'} 1000</WChip>
+                <WChip>status = 'paid'</WChip>
+                <WChip style={{ color: T.accent }}>＋ 添加条件</WChip>
+              </div>
+            </WCard>
+            <WCard style={{ width: 200 }}>
+              <WRow label="输出字段" />
+              {['users.name','orders.amount','orders.status','orders.created_at'].map(f => <div key={f} style={{ fontSize: 11, color: T.textB, padding: '3px 0' }}>✓ {f}</div>)}
+            </WCard>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <WBtn label="预览 SQL" />
+            <WBtn label="▶ 运行查询" primary />
+          </div>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+// ─── 知识库 A: 文件浏览器 ───────────────────────────────────────────────────
+function KnowledgeA() {
+  const files = [
+    { name: '数字经济政策研究报告', type: 'PDF', size: '2.4MB', date: '今天' },
+    { name: '2024年产业数据分析',   type: 'XLSX', size: '1.8MB', date: '昨天' },
+    { name: '市场调研报告 Q3',      type: 'DOCX', size: '890KB', date: '3天前' },
+    { name: '竞争对手分析框架',     type: 'PDF',  size: '3.1MB', date: '上周' },
+    { name: '政策解读与建议汇编',   type: 'DOCX', size: '540KB', date: '上周' },
+    { name: '行业趋势报告 2024',    type: 'PDF',  size: '5.2MB', date: '2周前' },
+  ];
+  const typeColor = { PDF: [T.amber, '#FFE8D6'], XLSX: [T.accent, '#D6EDE7'], DOCX: [T.blue, '#D6E4ED'] };
+  return (
+    <Shell page="knowledge" crumbs={['工作台', '个人知识库']}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+        <div style={{ flex: 1, background: T.white, border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 12px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: T.textL }}>🔍 语义搜索知识库…</div>
+        <WBtn label="📤 上传文档" primary />
+        <WBtn label="新建文件夹" />
+      </div>
+      <div style={{ display: 'flex', gap: 14, flex: 1, minHeight: 0 }}>
+        <WCard style={{ width: 216, flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
+          <WRow label="文件夹" />
+          {[['📁','全部文档',126,false],['📁','政策文件',34,false],['📁','研究报告',28,true],['📁','数据资料',45,false],['📁','参考文献',19,false]].map(([ic,name,cnt,act], i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 8, marginBottom: 2, cursor: 'pointer', background: act ? '#D6EDE7' : 'transparent', border: `1px solid ${act ? T.accent : 'transparent'}` }}>
+              <span>{ic}</span>
+              <span style={{ flex: 1, fontSize: 12, color: act ? T.accent : T.textB }}>{name}</span>
+              <span style={{ fontSize: 10, color: T.textL }}>{cnt}</span>
+            </div>
+          ))}
+          <div style={{ marginTop: 12, borderTop: `1px solid ${T.border}`, paddingTop: 10 }}>
+            <div style={{ fontSize: 10, color: T.textL, marginBottom: 6 }}>标签筛选</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {['重要','政策','2024','待处理'].map(t => <WChip key={t} style={{ fontSize: 10 }}>{t}</WChip>)}
+            </div>
+          </div>
+        </WCard>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.textH }}>研究报告</span>
+            <span style={{ fontSize: 11, color: T.textL }}>28 个文件</span>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+              <WChip style={{ fontSize: 11 }}>≡ 列表</WChip>
+              <WChip style={{ fontSize: 11, background: T.accent, color: '#fff', border: `1px solid ${T.accent}` }}>⊞ 网格</WChip>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+            {files.map((f, i) => {
+              const [color, bg] = typeColor[f.type];
+              return (
+                <WCard key={i} style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ height: 58, background: bg, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color }}>{f.type}</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: T.textH, lineHeight: 1.3 }}>{f.name}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.textL }}>
+                    <span>{f.size}</span><span>{f.date}</span>
+                  </div>
+                </WCard>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+// ─── 知识库 B: 搜索优先 ──────────────────────────────────────────────────────
+function KnowledgeB() {
+  const typeColor = { PDF: [T.amber, '#FFE8D6'], XLSX: [T.accent, '#D6EDE7'], DOCX: [T.blue, '#D6E4ED'] };
+  return (
+    <Shell page="knowledge" crumbs={['工作台', '个人知识库', '搜索']}>
+      <div style={{ maxWidth: 680, margin: '0 auto 20px', width: '100%', textAlign: 'center' }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: T.textH, marginBottom: 4 }}>在知识库中搜索</div>
+        <div style={{ fontSize: 12, color: T.textL, marginBottom: 14 }}>语义搜索 · 关键词检索 · 共 126 个文档</div>
+        <div style={{ background: T.white, border: `2px solid ${T.accent}`, borderRadius: 12, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' }}>
+          <span style={{ fontSize: 16 }}>🔍</span>
+          <span style={{ flex: 1, fontSize: 13, color: T.textB }}>数字经济政策</span>
+          <WChip style={{ fontSize: 10 }}>语义</WChip>
+          <WChip style={{ fontSize: 10 }}>关键词</WChip>
+          <WBtn label="搜索" primary small />
+        </div>
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 10 }}>
+          {['政策分析','数据报表','市场研究','竞争对手'].map(t => <WChip key={t} style={{ fontSize: 10 }}>🕐 {t}</WChip>)}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 14, flex: 1, minHeight: 0 }}>
+        <WCard style={{ width: 196, flexShrink: 0 }}>
+          <WRow label="筛选" />
+          <div style={{ fontSize: 10, color: T.textL, marginBottom: 5 }}>文件类型</div>
+          {['PDF (12)','Word (8)','Excel (6)','其他 (2)'].map((t, i) => (
+            <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '4px 0', fontSize: 11, color: T.textB }}>
+              <div style={{ width: 12, height: 12, borderRadius: 3, background: i < 3 ? T.accent : T.chip, border: `1px solid ${i < 3 ? T.accent : T.border}`, flexShrink: 0 }} />{t}
+            </div>
+          ))}
+          <div style={{ fontSize: 10, color: T.textL, margin: '12px 0 5px' }}>时间范围</div>
+          {['最近一周','最近一月','最近半年','全部'].map((t, i) => (
+            <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '4px 0', fontSize: 11, color: i === 1 ? T.accent : T.textB }}>
+              <div style={{ width: 12, height: 12, borderRadius: '50%', background: i === 1 ? T.accent : T.chip, border: `1px solid ${i === 1 ? T.accent : T.border}`, flexShrink: 0 }} />{t}
+            </div>
+          ))}
+        </WCard>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 11, color: T.textL }}>找到 28 个结果 · 按相关度排序</div>
+          {[
+            { name: '数字经济政策研究报告', match: '98%', type: 'PDF', excerpt: '数字经济政策框架的核心要素包括数据要素市场化、平台经济监管机制…' },
+            { name: '2024年产业数字化分析', match: '87%', type: 'XLSX', excerpt: '数字经济对传统产业的渗透率持续提升，制造业数字化率达到 67%…' },
+            { name: '政策解读：数字中国建设规划', match: '82%', type: 'DOCX', excerpt: '到2025年，数字经济核心产业增加值占GDP比重将达到10%以上…' },
+          ].map((r, i) => {
+            const [color, bg] = typeColor[r.type];
+            return (
+              <WCard key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', cursor: 'pointer' }}>
+                <div style={{ width: 38, height: 38, borderRadius: 8, background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color, flexShrink: 0 }}>{r.type}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: T.textH }}>{r.name}</span>
+                    <span style={{ fontSize: 10, background: '#D6EDE7', color: T.accent, padding: '1px 7px', borderRadius: 10, flexShrink: 0 }}>相关度 {r.match}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: T.textL, lineHeight: 1.5 }}>{r.excerpt}</div>
+                </div>
+                <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                  <WBtn label="查看" small />
+                  <WBtn label="引用" small primary />
+                </div>
+              </WCard>
+            );
+          })}
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+// ─── 框架说明 ─────────────────────────────────────────────────────────────────
+function ShellOverview() {
+  return (
+    <div style={{ fontFamily: T.font, background: T.pageBg, width: 960, height: 580, padding: 32, display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div style={{ fontSize: 20, fontWeight: 700, color: T.textH }}>整体页面框架 — 固定三栏布局</div>
+      <div style={{ flex: 1, display: 'flex', gap: 16 }}>
+        {/* Sidebar mock */}
+        <div style={{ width: 130, background: T.sidebar, border: `1px solid ${T.border}`, borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <div style={{ width: 26, height: 26, background: T.accent, borderRadius: 6, flexShrink: 0 }} />
+            <div style={{ height: 10, background: T.phDk, borderRadius: 3, flex: 1 }} />
+          </div>
+          <div style={{ height: 26, background: T.accent, borderRadius: 6 }} />
+          {[1,2,3,4,5].map(i => <div key={i} style={{ height: 24, background: T.chip, borderRadius: 6 }} />)}
+          <div style={{ marginTop: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div style={{ width: 24, height: 24, borderRadius: '50%', background: T.phDk }} />
+            <div style={{ height: 8, background: T.ph, borderRadius: 3, flex: 1 }} />
+          </div>
+        </div>
+        {/* Center */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ height: 40, background: T.white, border: `1px solid ${T.border}`, borderRadius: 8, display: 'flex', alignItems: 'center', padding: '0 14px', fontSize: 11, color: T.textL }}>面包屑导航 + 顶部工具栏</div>
+          <div style={{ flex: 1, background: T.white, border: `1.5px dashed ${T.border}`, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 8 }}>
+            <div style={{ fontSize: 16, color: T.textL }}>主内容区</div>
+            <div style={{ fontSize: 12, color: T.ph }}>根据当前页面动态渲染</div>
+          </div>
+        </div>
+        {/* AI Panel mock */}
+        <div style={{ width: 110, background: T.aiPanel, border: `1px solid ${T.border}`, borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: T.accent }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: T.textH }}>AI 助理</span>
+          </div>
+          <div style={{ fontSize: 9, background: '#D6EDE7', color: T.accent, padding: '2px 6px', borderRadius: 10, alignSelf: 'flex-start', fontWeight: 700 }}>始终可见</div>
+          <div style={{ height: 20, background: T.white, border: `1px solid ${T.border}`, borderRadius: '3px 8px 8px 8px' }} />
+          <div style={{ height: 20, background: T.accent, borderRadius: '8px 3px 8px 8px', alignSelf: 'flex-end', width: '80%' }} />
+          <div style={{ height: 28, background: T.white, border: `1px solid ${T.border}`, borderRadius: '3px 8px 8px 8px' }} />
+          <div style={{ marginTop: 'auto', height: 28, background: T.white, border: `1px solid ${T.border}`, borderRadius: 6 }} />
+        </div>
+      </div>
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: 20, paddingTop: 4 }}>
+        {[['220px 固定宽','侧边导航栏',T.accent],['flex 自适应','主内容区域',T.blue],['280px 固定宽','AI 助理面板',T.amber]].map(([w,l,c]) => (
+          <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+            <div style={{ width: 10, height: 10, borderRadius: 2, background: c }} />
+            <span style={{ color: T.textL }}>{w}</span>
+            <span style={{ color: T.textB, fontWeight: 600 }}>— {l}</span>
+          </div>
+        ))}
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: T.textL }}>顶部栏高度：52px · 内容区 padding：20px</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── 主应用 ───────────────────────────────────────────────────────────────────
+function App() {
+  return (
+    <DesignCanvas title="智能工作台 — 后台原型线框图">
+
+      <DCSection id="shell" title="整体框架">
+        <DCArtboard id="s0" label="框架结构说明" width={960} height={580}>
+          <ShellOverview />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="home" title="🏠 首页 / 工作台">
+        <DCArtboard id="h1" label="变体 A — 服务卡片网格" width={1440} height={900}><HomeA /></DCArtboard>
+        <DCArtboard id="h2" label="变体 B — 仪表盘概览" width={1440} height={900}><HomeB /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="sop" title="◈ SOP 数据分析">
+        <DCArtboard id="s1" label="变体 A — 步骤向导" width={1440} height={900}><SopA /></DCArtboard>
+        <DCArtboard id="s2" label="变体 B — 分屏操作台" width={1440} height={900}><SopB /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="policy" title="✦ 政策报告撰写">
+        <DCArtboard id="p1" label="变体 A — 文档编辑器" width={1440} height={900}><PolicyA /></DCArtboard>
+        <DCArtboard id="p2" label="变体 B — 引导式流程" width={1440} height={900}><PolicyB /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="analytics" title="◉ 高级数据分析">
+        <DCArtboard id="a1" label="变体 A — 图表仪表盘" width={1440} height={900}><AnalyticsA /></DCArtboard>
+        <DCArtboard id="a2" label="变体 B — 对话驱动分析" width={1440} height={900}><AnalyticsB /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="database" title="⬡ 数据库连接">
+        <DCArtboard id="d1" label="变体 A — SQL 编辑器" width={1440} height={900}><DatabaseA /></DCArtboard>
+        <DCArtboard id="d2" label="变体 B — 可视化查询构建器" width={1440} height={900}><DatabaseB /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="knowledge" title="◗ 个人知识库">
+        <DCArtboard id="k1" label="变体 A — 文件浏览器" width={1440} height={900}><KnowledgeA /></DCArtboard>
+        <DCArtboard id="k2" label="变体 B — 搜索优先模式" width={1440} height={900}><KnowledgeB /></DCArtboard>
+      </DCSection>
+
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
