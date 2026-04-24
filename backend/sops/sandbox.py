@@ -23,13 +23,14 @@ class SandboxExecutor:
         'smtplib', 'pickle', 'eval', 'exec', 'open',
         'pathlib', 'glob', 'shutil', 'tempfile',
         'commands', 'ast', 'builtins',
+        '__import__', 'importlib',
     ]
 
     # 允许的导入模块（安全模块）
     ALLOWED_IMPORTS = [
         'pandas', 'numpy', 'math', 'json', 're',
         'datetime', 'collections', 'itertools', 'functools',
-        'typing', 'decimal', 'random', 'statistics',
+        'typing', 'decimal', 'random', 'statistics', 'time',
     ]
 
     def __init__(self, timeout: int = DEFAULT_TIMEOUT):
@@ -76,12 +77,14 @@ class SandboxExecutor:
             cmd = ['python3', temp_file]
 
             # 使用 subprocess 执行，设置超时
+            # start_new_session=True 创建一个新会话，确保子进程被正确终止
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                env=self._get_safe_env()
+                env=self._get_safe_env(),
+                start_new_session=True
             )
 
             try:
@@ -91,9 +94,12 @@ class SandboxExecutor:
                 result['return_code'] = process.returncode
                 result['success'] = process.returncode == 0
             except subprocess.TimeoutExpired:
-                # 超时，终止进程
-                process.kill()
-                process.communicate()
+                # 超时，终止整个进程组（包括子进程）
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                 result['error'] = f'代码执行超时（超过 {self.timeout} 秒）'
                 result['return_code'] = -1
 
@@ -117,30 +123,61 @@ class SandboxExecutor:
         Returns:
             如果验证通过返回 None，否则返回错误信息
         """
-        # 提取所有 import 语句
-        import_pattern = r'^(?:from\s+(\w+)|import\s+([\w,\s]+))'
-        from_import_pattern = r'^from\s+(\w+)\s+import'
+        # 检查动态导入绕过 (e.g., __import__('os'), importlib.import_module('os'))
+        dynamic_import_patterns = [
+            r'__import__\s*\(\s*[\'"]([^\'"]+)[\'"]',
+            r'importlib\.import_module\s*\(\s*[\'"]([^\'"]+)[\'"]',
+            r'__import__\s*\(\s*[\'"][^\'"]+[\'"]\s*,\s*\{',
+        ]
+        for pattern in dynamic_import_patterns:
+            matches = re.findall(pattern, code)
+            for module in matches:
+                if module in self.BLOCKED_IMPORTS:
+                    return f'禁止导入危险模块: {module}'
+                if module not in self.ALLOWED_IMPORTS:
+                    return f'只允许导入安全模块: {module}'
 
-        lines = code.split('\n')
-        for line in lines:
+        # 移除字符串字面量和注释，避免绕过
+        # 移除单引号和双引号字符串
+        code_no_strings = re.sub(r'(?:"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\')', '', code)
+        # 移除注释
+        code_no_strings = re.sub(r'#.*$', '', code_no_strings, flags=re.MULTILINE)
+
+        # 标准化代码：移除跨行连接符
+        code_no_strings = code_no_strings.replace('\\\n', '')
+
+        # 检查 from ... import 语句 (支持圆括号和多行)
+        # 匹配: from module import (name1, name2, ...)
+        #      from module import name1, name2
+        #      from module import *
+        from_import_pattern = r'from\s+(\w+)\s+import\s+'
+        from_matches = re.findall(from_import_pattern, code_no_strings)
+        for module in from_matches:
+            if module in self.BLOCKED_IMPORTS:
+                return f'禁止导入危险模块: {module}'
+            if module not in self.ALLOWED_IMPORTS:
+                return f'只允许导入安全模块: {module}'
+
+        # 检查 import ... 语句 (支持多行和 as 别名)
+        # 匹配: import module1, module2, ...
+        import_pattern = r'^\s*import\s+([\w,\s]+)'
+        for line in code_no_strings.split('\n'):
             line = line.strip()
-
-            # 检查 from ... import 语句
-            from_match = re.match(r'^from\s+(\w+)', line)
-            if from_match:
-                module_name = from_match.group(1)
-                if module_name in self.BLOCKED_IMPORTS:
-                    return f'禁止导入危险模块: {module_name}'
-                continue
-
-            # 检查 import ... 语句
-            import_match = re.match(r'^import\s+([\w,\s]+)', line)
-            if import_match:
-                modules = import_match.group(1)
-                for module in modules.split(','):
-                    module = module.strip()
-                    if module in self.BLOCKED_IMPORTS:
-                        return f'禁止导入危险模块: {module}'
+            if line.startswith('import '):
+                # 移除行尾可能的圆括号/多行标记
+                line = re.sub(r'\s*\(.*', '', line)
+                import_match = re.match(import_pattern, line)
+                if import_match:
+                    modules = import_match.group(1)
+                    # 移除 as 别名，只保留模块名
+                    modules = re.sub(r'\s+as\s+\w+', '', modules)
+                    for module in modules.split(','):
+                        module = module.strip()
+                        if module:
+                            if module in self.BLOCKED_IMPORTS:
+                                return f'禁止导入危险模块: {module}'
+                            if module not in self.ALLOWED_IMPORTS:
+                                return f'只允许导入安全模块: {module}'
 
         return None
 
