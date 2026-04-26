@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import Card from '@/ui/components/common/Card.vue'
 import Button from '@/ui/components/common/Button.vue'
 import Chip from '@/ui/components/common/Chip.vue'
 import RowTitle from '@/ui/components/common/RowTitle.vue'
-import { fetchSOPs, executeSOP, getExecutionStatus, downloadExecutionResult, type SOP, type ExecutionResult } from '@/services/sopApi'
+import ExecutionConfig from '@/ui/components/sop/ExecutionConfig.vue'
+import { fetchSOPs, getExecutionStatus, downloadExecutionResult, type SOP, type ExecutionResult } from '@/services/sopApi'
 
 const router = useRouter()
 const route = useRoute()
@@ -17,6 +18,7 @@ const execution = ref<ExecutionResult | null>(null)
 const isExecuting = ref(false)
 const isPolling = ref(false)
 const pollInterval = ref<number | null>(null)
+const showExecutionConfig = ref(false)
 
 const selectedSOP = computed(() => {
   return sops.value.find(s => s.id === selectedSOPId.value)
@@ -27,7 +29,7 @@ const canExecute = computed(() => {
 })
 
 const hasResult = computed(() => {
-  return execution.value && (execution.value.status === 'completed' || execution.value.status === 'failed')
+  return execution.value && (execution.value.status === 'success' || execution.value.status === 'failed')
 })
 
 onMounted(async () => {
@@ -42,6 +44,19 @@ onMounted(async () => {
 onUnmounted(() => {
   stopPolling()
 })
+
+// Q3: 路由跳转时也清理轮询，防 keep-alive 泄漏
+onBeforeRouteLeave(() => {
+  stopPolling()
+})
+
+function handleExecute() {
+  showExecutionConfig.value = true
+}
+
+function handleExecutionComplete(execId: string) {
+  startPolling(execId)
+}
 
 function handleFileUpload(event: Event) {
   const target = event.target as HTMLInputElement
@@ -61,33 +76,6 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
-async function handleExecute() {
-  if (!canExecute.value) return
-
-  isExecuting.value = true
-  execution.value = null
-
-  try {
-    const result = await executeSOP(selectedSOPId.value, uploadedFiles.value.length > 0 ? uploadedFiles.value : undefined)
-    if (result) {
-      execution.value = result
-      startPolling(result.id)
-    }
-  } catch (error) {
-    console.error('Execution failed:', error)
-    execution.value = {
-      id: '',
-      sop_id: selectedSOPId.value,
-      status: 'failed',
-      progress: 0,
-      error: '执行失败，请重试',
-      created_at: new Date().toISOString()
-    }
-  } finally {
-    isExecuting.value = false
-  }
-}
-
 function startPolling(execId: string) {
   stopPolling()
   isPolling.value = true
@@ -96,7 +84,7 @@ function startPolling(execId: string) {
     const status = await getExecutionStatus(execId)
     if (status) {
       execution.value = status
-      if (status.status === 'completed' || status.status === 'failed') {
+      if (status.status === 'success' || status.status === 'failed') {
         stopPolling()
       }
     }
@@ -137,7 +125,7 @@ function goToCreate() {
 
 function getStatusColor(status: string): string {
   switch (status) {
-    case 'completed': return '#5B8F7A'
+    case 'success': return '#5B8F7A'
     case 'failed': return '#C17F3A'
     case 'running': return '#3A7FC1'
     default: return '#9C8E82'
@@ -146,11 +134,22 @@ function getStatusColor(status: string): string {
 
 function getStatusLabel(status: string): string {
   switch (status) {
-    case 'completed': return '已完成'
+    case 'success': return '已完成'
     case 'failed': return '失败'
     case 'running': return '执行中'
     case 'pending': return '等待中'
     default: return '未知'
+  }
+}
+
+// 由 status 派生进度百分比（后端不传 progress 字段）
+function getProgressPercent(status: string): number {
+  switch (status) {
+    case 'success': return 100
+    case 'failed': return 100
+    case 'running': return 50
+    case 'pending': return 10
+    default: return 0
   }
 }
 </script>
@@ -210,7 +209,7 @@ function getStatusLabel(status: string): string {
             <input
               type="file"
               multiple
-              accept=".xlsx,.xls,.csv,.txt"
+              accept=".xlsx,.xls,.csv"
               class="hidden"
               @change="handleFileUpload"
             />
@@ -285,7 +284,7 @@ function getStatusLabel(status: string): string {
                 </span>
               </div>
               <span class="text-[11px] text-text-light">
-                {{ execution.progress }}%
+                {{ getProgressPercent(execution.status) }}%
               </span>
             </div>
 
@@ -294,7 +293,7 @@ function getStatusLabel(status: string): string {
               <div
                 class="h-full rounded-full transition-all duration-300"
                 :style="{
-                  width: execution.progress + '%',
+                  width: getProgressPercent(execution.status) + '%',
                   backgroundColor: getStatusColor(execution.status)
                 }"
               />
@@ -309,7 +308,7 @@ function getStatusLabel(status: string): string {
           <div v-if="hasResult" class="flex-1 flex flex-col">
             <RowTitle label="执行结果" />
 
-            <div v-if="execution.status === 'completed'" class="flex-1">
+            <div v-if="execution.status === 'success'" class="flex-1">
               <div class="bg-page-bg border border-border rounded-lg p-4 mb-4">
                 <div class="text-[12px] text-text-body">
                   执行成功！结果已生成。
@@ -352,15 +351,11 @@ function getStatusLabel(status: string): string {
                 <div
                   class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
                   :style="{
-                    backgroundColor: index < execution.progress / (100 / selectedSOP.steps.length)
-                      ? '#5B8F7A'
-                      : '#E5DDD0',
-                    color: index < execution.progress / (100 / selectedSOP.steps.length)
-                      ? '#ffffff'
-                      : '#9C8E82'
+                    backgroundColor: '#E5DDD0',
+                    color: '#9C8E82'
                   }"
                 >
-                  {{ index < execution.progress / (100 / selectedSOP.steps.length) ? '✓' : index + 1 }}
+                  {{ index + 1 }}
                 </div>
                 <span class="text-text-body">{{ step.description }}</span>
               </div>
@@ -381,6 +376,15 @@ function getStatusLabel(status: string): string {
         {{ isExecuting ? '执行中…' : '▶ 执行 SOP' }}
       </Button>
     </div>
+
+    <!-- Execution Config Modal -->
+    <ExecutionConfig
+      v-if="showExecutionConfig && selectedSOP"
+      :sop-id="selectedSOP.id"
+      :data-sources="selectedSOP.dataSources || []"
+      @close="showExecutionConfig = false"
+      @executed="handleExecutionComplete"
+    />
   </div>
 </template>
 

@@ -27,7 +27,7 @@ const navigateTo = (path: string) => {
 <template>
   <aside class="w-sidebar bg-sidebar-bg border-r border-border flex flex-col">
     <div class="px-4 py-[18px] border-b border-border flex items-center gap-[10px]">
-      <div class="w-8 h-8 bg-accent rounded-[9px] flex items-center justify-center text-white text-lg flex-shrink-0">
+      <div class="w-8 h-8 bg-gradient-to-br from-accent to-accent-dark rounded-[9px] flex items-center justify-center text-white text-lg flex-shrink-0 shadow-[0_2px_6px_rgba(91,143,122,0.40)]">
         ✦
       </div>
       <div>
@@ -44,8 +44,8 @@ const navigateTo = (path: string) => {
         @click="navigateTo(item.path)"
         class="flex items-center gap-2.5 px-3 py-2 rounded-md mb-1 cursor-pointer transition-colors"
         :class="currentKey === item.key
-          ? 'bg-accent text-white'
-          : 'text-text-body hover:bg-accent/10'"
+          ? 'bg-gradient-to-r from-accent to-accent-dark text-white shadow-nav-active'
+          : 'text-text-body hover:bg-accent/10 hover:text-text-heading'"
       >
         <span class="w-4 text-center flex-shrink-0">{{ item.icon }}</span>
         <span class="text-[13px]">{{ item.label }}</span>

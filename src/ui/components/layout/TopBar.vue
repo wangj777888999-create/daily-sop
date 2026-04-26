@@ -7,7 +7,7 @@ defineProps<Props>()
 </script>
 
 <template>
-  <header class="h-topbar bg-topbar-bg border-b border-border px-xl flex items-center gap-3">
+  <header class="h-topbar bg-gradient-to-b from-topbar-bg to-[#F9F5EE] border-b border-border/60 px-xl flex items-center gap-3 shadow-[0_1px_0_rgba(196,186,168,0.4)]">
     <div class="flex-1 flex items-center gap-1 text-[12px]">
       <template v-for="(crumb, index) in breadcrumbs" :key="index">
         <span v-if="index > 0" class="text-border">/</span>

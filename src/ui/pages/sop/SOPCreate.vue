@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, watch, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import Card from '@/ui/components/common/Card.vue'
 import Button from '@/ui/components/common/Button.vue'
 import Input from '@/ui/components/common/Input.vue'
 import Chip from '@/ui/components/common/Chip.vue'
 import RowTitle from '@/ui/components/common/RowTitle.vue'
-import { createSOP, generateSOPFromDescription, type SOPStep } from '@/services/sopApi'
+import { createSOP, updateSOP, generateSOPFromDescription, getSOP, type SOPStep } from '@/services/sopApi'
 
 const router = useRouter()
+const route = useRoute()
+
+const isEditing = computed(() => !!route.params.sopId)
+const editingSOPId = computed(() => route.params.sopId as string)
 
 const sopName = ref('')
 const sopDescription = ref('')
@@ -19,6 +23,22 @@ const generatedSteps = ref<SOPStep[]>([])
 const isGenerating = ref(false)
 const isSaving = ref(false)
 const activeTab = ref<'input' | 'preview'>('input')
+
+// 加载已有 SOP
+onMounted(() => {
+  if (isEditing.value) {
+    ;(async () => {
+      const sop = await getSOP(editingSOPId.value)
+      if (sop) {
+        sopName.value = sop.name
+        sopDescription.value = sop.description || ''
+        tags.value = sop.tags || []
+        generatedSteps.value = sop.steps || []
+        activeTab.value = 'preview'
+      }
+    })()
+  }
+})
 
 // Auto-generate preview when description changes
 watch(descriptionInput, async (newVal) => {
@@ -91,6 +111,8 @@ function addStep() {
   generatedSteps.value.push({
     id: `step-${newOrder}`,
     order: newOrder,
+    action: '',
+    params: {},
     description: '',
     code: ''
   })
@@ -116,7 +138,12 @@ async function handleSave() {
       tags: tags.value
     }
 
-    const result = await createSOP(sop)
+    let result
+    if (isEditing.value) {
+      result = await updateSOP(editingSOPId.value, sop)
+    } else {
+      result = await createSOP(sop)
+    }
     if (result) {
       router.push('/sop')
     }
@@ -137,8 +164,8 @@ function goBack() {
     <!-- Header -->
     <div class="flex items-center justify-between mb-4">
       <div>
-        <h1 class="text-[20px] font-bold text-text-heading">新建 SOP</h1>
-        <p class="text-[13px] text-text-light mt-0.5">通过自然语言描述创建标准操作流程</p>
+        <h1 class="text-[20px] font-bold text-text-heading">{{ isEditing ? '编辑 SOP' : '新建 SOP' }}</h1>
+        <p class="text-[13px] text-text-light mt-0.5">{{ isEditing ? '修改标准操作流程' : '通过自然语言描述创建标准操作流程' }}</p>
       </div>
       <Button variant="secondary" @click="goBack">← 返回</Button>
     </div>

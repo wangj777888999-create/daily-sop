@@ -6,7 +6,8 @@ import Button from '@/ui/components/common/Button.vue'
 import Input from '@/ui/components/common/Input.vue'
 import Chip from '@/ui/components/common/Chip.vue'
 import RowTitle from '@/ui/components/common/RowTitle.vue'
-import { createSOP, parsePythonCode, type SOPStep } from '@/services/sopApi'
+import { createSOP, parsePythonCode } from '@/services/sopApi'
+import type { SOPStep } from '@/types/sop'
 
 const router = useRouter()
 
@@ -65,6 +66,8 @@ function addStep() {
   parsedSteps.value.push({
     id: `step-${newOrder}`,
     order: newOrder,
+    action: '',
+    params: {},
     description: '',
     code: ''
   })
@@ -75,13 +78,10 @@ async function handleParse() {
 
   isParsing.value = true
   parseError.value = ''
-  hasParsed.value = false
 
   try {
     const result = await parsePythonCode(pythonCode.value)
-    if (result && result.length > 0) {
-      parsedSteps.value = result
-      hasParsed.value = true
+    if (result && result.steps && result.steps.length > 0) {
       // Auto-fill name from first function def if not set
       if (!sopName.value) {
         const firstFunc = pythonCode.value.match(/def\s+(\w+)/)
@@ -89,6 +89,10 @@ async function handleParse() {
           sopName.value = firstFunc[1].replace(/_/g, ' ')
         }
       }
+      // B5: 用 sessionStorage 传代码，避免长代码撞 URL 长度上限且污染浏览器历史
+      sessionStorage.setItem('pending_sop_code', pythonCode.value)
+      sessionStorage.setItem('pending_sop_name', sopName.value)
+      router.push({ name: 'SOPAnnotate' })
     } else {
       parseError.value = '无法解析代码，请确保代码格式正确'
     }

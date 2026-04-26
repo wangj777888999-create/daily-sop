@@ -342,17 +342,28 @@ def _validate_condition(condition: str) -> bool:
     return bool(re.match(pattern, condition))
 
 
-def SOPToExecutableCode(sop: Dict[str, Any]) -> str:
-    """将 SOP 字典转换为可执行 Python 代码
+def SOPToExecutableCode(sop: Dict[str, Any], mappings: Dict[str, str] = None) -> str:
+    """将 SOP 转换为可执行代码
 
     Args:
         sop: SOP 字典（包含 name, description, steps 数组）
+        mappings: 数据源ID到实际文件的映射，如 {"ds_coach": "/path/to/file.xlsx"}
+                 如果为 None，则使用 SOP 中存储的原始路径
 
     Returns:
         可执行的 Python 代码字符串
     """
     generator = CodeGenerator()
-    return generator.generate(sop)
+    code = generator.generate(sop)
+
+    # 如果提供了 mappings，进行替换
+    if mappings:
+        for ds_id, file_path in mappings.items():
+            # 替换 {{ds_id}} 占位符（保留周围的引号）
+            placeholder = f'{{{{{ds_id}}}}}'
+            code = code.replace(placeholder, file_path)
+
+    return code
 
 
 # 测试代码

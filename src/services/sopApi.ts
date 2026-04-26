@@ -1,31 +1,33 @@
-import { ref } from 'vue'
+import { ref, reactive } from 'vue'
+import type { SOP, ParsedCodeResult } from '@/types/sop'
+export type { SOP, ParsedCodeResult } from '@/types/sop'
+export type { SOPStep, DataSource } from '@/types/sop'
 
-export interface SOP {
-  id: string
-  name: string
-  description: string
-  steps: SOPStep[]
-  tags: string[]
-  created_at: string
-  updated_at: string
-}
-
-export interface SOPStep {
-  id: string
-  order: number
-  description: string
-  code?: string
-}
+export type ExecutionStatus = 'pending' | 'running' | 'success' | 'failed'
 
 export interface ExecutionResult {
   id: string
-  sop_id: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
-  progress: number
-  result?: any
+  sop_id?: string
+  status: ExecutionStatus
+  input_files?: string[]
+  output_file?: string
   error?: string
-  created_at: string
+  created_at?: string
   completed_at?: string
+}
+
+// 后端 → 前端 字段适配
+function adaptExecutionResponse(data: any): ExecutionResult {
+  return {
+    id: data.execution_id ?? data.id,
+    sop_id: data.sop_id,
+    status: data.status,
+    input_files: data.input_files,
+    output_file: data.output_file,
+    error: data.error_message ?? data.error,
+    created_at: data.created_at,
+    completed_at: data.completed_at,
+  }
 }
 
 // SOP List
@@ -33,7 +35,8 @@ export const sops = ref<SOP[]>([])
 export const sopsLoading = ref(false)
 
 // Execution
-export const executions = ref<Map<string, ExecutionResult>>(new Map())
+// Q2: 使用 reactive 而非 ref<Map>，避免 .set() 不触发更新的陷阱
+export const executions = reactive(new Map<string, ExecutionResult>())
 export const currentExecution = ref<ExecutionResult | null>(null)
 
 // API Base URL
@@ -53,6 +56,32 @@ export async function fetchSOPs(): Promise<SOP[]> {
     return []
   } finally {
     sopsLoading.value = false
+  }
+}
+
+// Get single SOP
+export async function getSOP(id: string): Promise<SOP | null> {
+  try {
+    const response = await fetch(`${API_BASE}/sops/${id}`)
+    if (!response.ok) return null
+    const data = await response.json()
+    // Transform backend format to frontend format
+    // Backend: { steps: [{step, action, params}] }
+    // Frontend: { steps: [{id, order, action, params, description, code}] }
+    if (data.steps) {
+      data.steps = data.steps.map((s: any, idx: number) => ({
+        id: `step-${idx + 1}`,
+        order: s.step || idx + 1,
+        action: s.action || '',
+        params: s.params || {},
+        description: s.description || '',
+        code: s.code || ''
+      }))
+    }
+    return data
+  } catch (error) {
+    console.error('Error fetching SOP:', error)
+    return null
   }
 }
 
@@ -125,8 +154,9 @@ export async function executeSOP(sopId: string, files?: File[]): Promise<Executi
     })
     if (!response.ok) throw new Error('Failed to execute SOP')
     const data = await response.json()
-    currentExecution.value = data
-    return data
+    const adapted = adaptExecutionResponse(data)
+    currentExecution.value = adapted
+    return adapted
   } catch (error) {
     console.error('Error executing SOP:', error)
     return null
@@ -139,11 +169,12 @@ export async function getExecutionStatus(execId: string): Promise<ExecutionResul
     const response = await fetch(`${API_BASE}/execute/${execId}/status`)
     if (!response.ok) throw new Error('Failed to get execution status')
     const data = await response.json()
-    executions.value.set(execId, data)
+    const adapted = adaptExecutionResponse(data)
+    executions.set(execId, adapted)
     if (currentExecution.value?.id === execId) {
-      currentExecution.value = data
+      currentExecution.value = adapted
     }
-    return data
+    return adapted
   } catch (error) {
     console.error('Error getting execution status:', error)
     return null
@@ -163,7 +194,7 @@ export async function downloadExecutionResult(execId: string): Promise<Blob | nu
 }
 
 // Parse Python code to SOP steps
-export async function parsePythonCode(code: string): Promise<SOPStep[] | null> {
+export async function parsePythonCode(code: string): Promise<ParsedCodeResult | null> {
   try {
     const response = await fetch(`${API_BASE}/sops/parse`, {
       method: 'POST',
@@ -171,7 +202,26 @@ export async function parsePythonCode(code: string): Promise<SOPStep[] | null> {
       body: JSON.stringify({ code })
     })
     if (!response.ok) throw new Error('Failed to parse Python code')
-    return await response.json()
+    const data = await response.json()
+    // 后端返回 { name, description, steps: [{step, action, params}], dataSources: [...] }
+    if (data.steps && Array.isArray(data.steps)) {
+      const result: ParsedCodeResult = {
+        name: data.name || '',
+        description: data.description || '',
+        steps: data.steps.map((s: any, idx: number) => ({
+          id: `step-${idx + 1}`,
+          order: s.step || idx + 1,
+          action: s.action || '',
+          params: s.params || {},
+          description: s.action ? `${s.action}: ${JSON.stringify(s.params || {})}` : '',
+          inputSources: s.inputSources,
+          outputSource: s.outputSource
+        })),
+        dataSources: data.dataSources || []
+      }
+      return result
+    }
+    return null
   } catch (error) {
     console.error('Error parsing Python code:', error)
     return null

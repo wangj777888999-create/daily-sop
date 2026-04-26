@@ -393,6 +393,12 @@ class CodeParser:
             return node.value
         elif isinstance(node, ast.Name):
             return node.id
+        elif isinstance(node, ast.Subscript):
+            # 处理 df['col'] 或 df[['col1', 'col2']] 的情况
+            if isinstance(node.value, ast.Name):
+                # 返回 df 名称作为标识符
+                return node.value.id
+            return None
         elif isinstance(node, ast.BinOp):
             left = self._get_value(node.left)
             right = self._get_value(node.right)
@@ -466,9 +472,19 @@ class CodeParser:
         params = {}
 
         if isinstance(node.func, ast.Attribute):
-            df_name = self._get_value(node.func.value) if hasattr(node.func.value, 'id') else None
-            if df_name:
-                params["df"] = df_name
+            # node.func.value 可能是：
+            # 1. ast.Name - 直接的 df 变量，如 df.drop(...)
+            # 2. ast.Call - 链式调用，如 df.query(...).drop(...)
+            value_node = node.func.value
+            if isinstance(value_node, ast.Name):
+                params["df"] = value_node.id
+            elif isinstance(value_node, ast.Call):
+                # 链式调用，尝试获取内层调用的 df 名称
+                inner_func = value_node.func
+                if isinstance(inner_func, ast.Attribute) and isinstance(inner_func.value, ast.Name):
+                    params["df"] = inner_func.value.id
+                elif isinstance(inner_func, ast.Name):
+                    params["df"] = inner_func.id
 
         for keyword in node.keywords:
             key = keyword.arg
@@ -656,6 +672,34 @@ def ParserCodeToSOP(code: str) -> Dict[str, Any]:
     """
     parser = CodeParser()
     return parser.parse(code)
+
+
+def parse_code_with_sources(code: str) -> Dict[str, Any]:
+    """解析 Python 代码，识别数据源和步骤
+
+    Returns:
+        {
+            "name": "SOP名称",
+            "description": "描述",
+            "steps": [...],
+            "dataSources": [...]
+        }
+    """
+    from sops.data_source import DataSourceDetector, SemanticInferencer
+
+    # 原有解析逻辑
+    parser = CodeParser()
+    result = parser.parse(code)
+
+    # 检测数据源
+    detector = DataSourceDetector()
+    inferencer = SemanticInferencer()
+    sources = detector.detect(code)
+
+    # 转换为字典
+    result["dataSources"] = [s.model_dump() for s in sources]
+
+    return result
 
 
 # 测试代码

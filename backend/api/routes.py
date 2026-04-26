@@ -10,10 +10,10 @@ import shutil
 import json
 
 from sops.storage import get_all_sops, get_sop, save_sop, delete_sop, get_all_logs, save_log
-from sops.code_parser import ParserCodeToSOP
+from sops.code_parser import ParserCodeToSOP, parse_code_with_sources
 from sops.code_generator import SOPToExecutableCode
 from sops.sandbox import SandboxExecutor
-from sops.models import SOP, Step, ExecutionLog
+from sops.models import SOP, Step, ExecutionLog, DataSource
 
 router = APIRouter()
 
@@ -24,6 +24,43 @@ MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "data")
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+# ==================== 辅助函数 ====================
+
+def _convert_steps_format(steps_data: list) -> List[Step]:
+    """转换步骤格式：前端格式 -> 后端格式
+
+    前端格式: {id, order, action, params, description, code}
+    后端格式: {step, action, params, description}
+    """
+    converted_steps = []
+    for s in steps_data:
+        if 'step' in s and 'action' in s and 'params' in s:
+            # 已经是后端格式
+            converted_steps.append(Step(**s))
+        elif 'order' in s:
+            # 前端格式，需要转换
+            action = s.get('action', '')
+            params = s.get('params', {})
+
+            # 如果 action 为空，尝试从 description 解析（旧格式兼容）
+            if not action:
+                desc = s.get('description', '')
+                if ':' in desc:
+                    action = desc.split(':', 1)[0].strip()
+                    try:
+                        params = json.loads(desc.split(':', 1)[1].strip())
+                    except:
+                        params = {}
+
+            converted_steps.append(Step(
+                step=s.get('order', 1),
+                action=action,
+                params=params,
+                description=s.get('description', '')
+            ))
+    return converted_steps
 
 
 # ==================== 响应模型 ====================
@@ -61,12 +98,35 @@ class FileInfoResponse(BaseModel):
 
 from fastapi import Body
 
+@router.post("/sops/generate", response_model=dict)
+async def generate_sop_from_description(body: dict = Body(...)):
+    """B3: 从自然语言描述生成 SOP（按行拆分为步骤）"""
+    description = body.get("description", "")
+    lines = [l.strip() for l in description.split('\n') if l.strip()]
+    steps = [
+        {
+            "id": f"step-{i+1}",
+            "order": i + 1,
+            "action": "",
+            "params": {},
+            "description": line,
+            "code": ""
+        }
+        for i, line in enumerate(lines)
+    ]
+    return {
+        "name": lines[0][:50] if lines else "新 SOP",
+        "description": description,
+        "steps": steps
+    }
+
+
 @router.post("/sops/parse", response_model=dict)
 async def parse_code(body: dict = Body(...)):
-    """解析 Python 代码为 SOP"""
+    """解析 Python 代码为 SOP（包含数据源信息）"""
     code = body.get("code", "")
-    sop_dict = ParserCodeToSOP(code)
-    return sop_dict
+    result = parse_code_with_sources(code)  # 使用新函数
+    return result
 
 
 @router.get("/sops", response_model=List[dict])
@@ -86,46 +146,68 @@ async def get_sop_by_id(sop_id: str):
 
 
 @router.post("/sops", response_model=dict)
-async def create_sop(
-    name: str = Form(...),
-    description: str = Form(""),
-    code: Optional[str] = Form(None),
-    steps: Optional[str] = Form(None)
-):
-    """创建新 SOP
+async def create_sop(body: dict = Body(...)):
+    """创建新 SOP (统一 JSON 格式)
 
-    支持两种方式:
+    兼容两种模式:
     1. 通过 code (Python 代码) 自动解析生成 SOP
-    2. 通过 steps (JSON 格式的步骤数组) 直接创建 SOP
+    2. 通过 steps (步骤数组) 直接创建 SOP
     """
     sop_id = str(uuid.uuid4())
     now = datetime.now()
 
+    name = body.get("name", "未命名 SOP")
+    description = body.get("description", "")
+    code = body.get("code")
+    steps_data = body.get("steps")
+    tags = body.get("tags", [])
+
     if code:
         # 通过代码解析生成 SOP
-        sop_dict = ParserCodeToSOP(code)
-        sop = SOP(
-            id=sop_id,
-            name=sop_dict.get("name", name),
-            description=sop_dict.get("description", description),
-            steps=[Step(**s) for s in sop_dict.get("steps", [])],
-            created_at=now,
-            updated_at=now
-        )
-    elif steps:
-        # 通过步骤 JSON 创建 SOP
-        try:
-            steps_list = json.loads(steps)
+        sop_dict = parse_code_with_sources(code)  # 使用新函数获取 dataSources
+        data_sources = sop_dict.get("dataSources", [])
+        if data_sources:
             sop = SOP(
                 id=sop_id,
-                name=name,
-                description=description,
-                steps=[Step(**s) for s in steps_list],
+                name=sop_dict.get("name", name),
+                description=sop_dict.get("description", description),
+                steps=[Step(**s) for s in sop_dict.get("steps", [])],
+                dataSources=[DataSource(**ds) for ds in data_sources],
+                tags=tags,
                 created_at=now,
                 updated_at=now
             )
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=400, detail="Invalid steps JSON format")
+        else:
+            sop = SOP(
+                id=sop_id,
+                name=sop_dict.get("name", name),
+                description=sop_dict.get("description", description),
+                steps=[Step(**s) for s in sop_dict.get("steps", [])],
+                tags=tags,
+                created_at=now,
+                updated_at=now
+            )
+    elif steps_data:
+        # 通过步骤 JSON 创建 SOP (支持前端格式转换)
+        converted_steps = _convert_steps_format(steps_data)
+
+        # 处理 dataSources
+        data_sources_data = body.get("dataSources", [])
+        if data_sources_data:
+            data_sources = [DataSource(**ds) for ds in data_sources_data]
+        else:
+            data_sources = []
+
+        sop = SOP(
+            id=sop_id,
+            name=name,
+            description=description,
+            steps=converted_steps,
+            dataSources=data_sources,
+            tags=tags,
+            created_at=now,
+            updated_at=now
+        )
     else:
         raise HTTPException(status_code=400, detail="Either 'code' or 'steps' must be provided")
 
@@ -134,28 +216,29 @@ async def create_sop(
 
 
 @router.put("/sops/{sop_id}", response_model=dict)
-async def update_sop(
-    sop_id: str,
-    name: str = Form(...),
-    description: str = Form(""),
-    steps: str = Form(...)
-):
+async def update_sop(sop_id: str, body: dict = Body(...)):
     """更新 SOP"""
     existing_sop = get_sop(sop_id)
     if not existing_sop:
         raise HTTPException(status_code=404, detail="SOP not found")
 
-    try:
-        steps_list = json.loads(steps)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid steps JSON format")
+    name = body.get("name", existing_sop.name)
+    description = body.get("description", existing_sop.description)
+    steps_data = body.get("steps")
+    tags = body.get("tags", existing_sop.tags)
+
+    if steps_data is None:
+        raise HTTPException(status_code=400, detail="steps is required")
+
+    converted_steps = _convert_steps_format(steps_data)
 
     now = datetime.now()
     sop = SOP(
         id=sop_id,
         name=name,
         description=description,
-        steps=[Step(**s) for s in steps_list],
+        steps=converted_steps,
+        tags=tags,
         created_at=existing_sop.created_at,
         updated_at=now
     )
@@ -180,33 +263,34 @@ async def execute_sop(sop_id: str, files: List[UploadFile] = File(...)):
 
     接收上传的文件，执行 SOP，返回 execution_id
     """
-    # 获取 SOP
     sop = get_sop(sop_id)
     if not sop:
         raise HTTPException(status_code=404, detail="SOP not found")
 
-    # 保存上传的文件（同步执行，非异步）
+    # B4: 先生成 exec_id，为每次执行创建独立目录，避免同名文件覆盖
+    exec_id = str(uuid.uuid4())
+    exec_dir = os.path.join(UPLOAD_DIR, exec_id)
+    os.makedirs(exec_dir, exist_ok=True)
+
     input_files = []
+    filename_mapping = {}
     for file in files:
-        # 验证文件大小
-        file.file.seek(0, 2)  # Seek to end
+        file.file.seek(0, 2)
         size = file.file.tell()
-        file.file.seek(0)  # Reset to start
+        file.file.seek(0)
         if size > MAX_FILE_SIZE:
             raise HTTPException(
                 status_code=413,
                 detail=f"File size {size} exceeds maximum allowed size {MAX_FILE_SIZE}"
             )
 
-        # 使用 os.path.basename() 防止路径遍历攻击
         safe_filename = os.path.basename(file.filename)
-        file_path = os.path.join(UPLOAD_DIR, safe_filename)
+        file_path = os.path.join(exec_dir, safe_filename)
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         input_files.append(file_path)
+        filename_mapping[safe_filename] = file_path
 
-    # 创建执行记录
-    exec_id = str(uuid.uuid4())
     now = datetime.now()
     log = ExecutionLog(
         id=exec_id,
@@ -217,9 +301,16 @@ async def execute_sop(sop_id: str, files: List[UploadFile] = File(...)):
     )
     save_log(log)
 
-    # 生成可执行代码
     sop_dict = sop.model_dump(mode="json")
     code = SOPToExecutableCode(sop_dict)
+
+    # B6: 用 __INPUT_PATHS__ 字典注入路径，避免文件名含引号/空格/中文时字符串替换出错
+    input_paths_preamble = f"__INPUT_PATHS__ = {json.dumps(filename_mapping, ensure_ascii=False)}\n"
+    for safe_filename in filename_mapping:
+        escaped_key = json.dumps(safe_filename)
+        code = code.replace(f"'{safe_filename}'", f"__INPUT_PATHS__[{escaped_key}]")
+        code = code.replace(f'"{safe_filename}"', f"__INPUT_PATHS__[{escaped_key}]")
+    code = input_paths_preamble + code
 
     # 同步执行代码（当前请求会阻塞等待执行完成）
     try:

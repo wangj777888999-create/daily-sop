@@ -69,3 +69,32 @@ body {
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* ===== 微动效 ===== */
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position:  600px 0; }
+}
+
+/* 页面/区块进场动画 */
+.animate-fadein {
+  animation: fadeInUp 0.22s ease-out both;
+}
+
+/* 骨架屏 shimmer */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-chip) 25%,
+    var(--color-placeholder) 50%,
+    var(--color-chip) 75%
+  );
+  background-size: 600px 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}

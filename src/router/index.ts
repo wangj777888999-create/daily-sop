@@ -31,6 +31,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '导入 SOP' }
   },
   {
+    path: '/sop/annotate',
+    name: 'SOPAnnotate',
+    component: () => import('@/ui/pages/sop/SemanticAnnotation.vue'),
+    meta: { title: '语义标注' }
+  },
+  {
     path: '/sop/execute/:sopId?',
     name: 'sop-execute',
     component: () => import('@/ui/pages/sop/SOPExecute.vue'),

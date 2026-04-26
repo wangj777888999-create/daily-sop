@@ -13,11 +13,13 @@ withDefaults(defineProps<Props>(), {
 
 <template>
   <button
-    class="inline-flex items-center gap-1.5 cursor-pointer transition-colors font-medium"
+    class="inline-flex items-center gap-1.5 cursor-pointer font-medium select-none
+           transition-all duration-150 ease-spring
+           active:scale-[0.97] active:brightness-95"
     :class="[
       variant === 'primary'
-        ? 'bg-accent text-white border border-accent hover:bg-accent/90'
-        : 'bg-chip text-text-body border border-border hover:bg-chip/80',
+        ? 'bg-gradient-to-b from-accent to-accent-dark text-white border border-accent-dark/50 shadow-button-primary hover:brightness-105'
+        : 'bg-chip text-text-body border border-border hover:bg-placeholder/50 hover:shadow-sm',
       size === 'normal'
         ? 'px-[18px] py-2 text-[12px] rounded-lg'
         : 'px-3 py-1 text-[11px] rounded-md'

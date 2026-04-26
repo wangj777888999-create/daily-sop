@@ -94,30 +94,52 @@ function goToEdit(sop: SOP) {
       <span class="text-[11px] text-text-light">{{ filteredSOPs.length }} 个 SOP</span>
     </div>
 
-    <!-- Loading State -->
-    <div v-if="loading" class="flex-1 flex items-center justify-center">
-      <div class="text-[13px] text-text-light">加载中…</div>
+    <!-- Loading State: 骨架屏 -->
+    <div v-if="loading" class="flex-1">
+      <div class="grid grid-cols-2 gap-3">
+        <div
+          v-for="i in 4"
+          :key="i"
+          class="bg-gradient-to-b from-card-bg to-card-gradient border border-border/70 rounded-xl p-4 shadow-card"
+        >
+          <div class="skeleton h-4 w-3/4 mb-2 rounded-md" />
+          <div class="skeleton h-3 w-full mb-1.5 rounded" />
+          <div class="skeleton h-3 w-2/3 mb-4 rounded" />
+          <div class="flex gap-1.5 mb-4">
+            <div class="skeleton h-5 w-12 rounded-md" />
+            <div class="skeleton h-5 w-16 rounded-md" />
+          </div>
+          <div class="skeleton h-px w-full mb-3" />
+          <div class="flex justify-between items-center">
+            <div class="skeleton h-3 w-20 rounded" />
+            <div class="skeleton h-6 w-14 rounded-md" />
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Empty State -->
-    <div v-else-if="filteredSOPs.length === 0 && !searchQuery" class="flex-1 flex flex-col items-center justify-center">
-      <div class="text-[48px] mb-3">📋</div>
-      <h3 class="text-[16px] font-bold text-text-heading mb-1">暂无 SOP</h3>
-      <p class="text-[12px] text-text-light mb-4">创建你的第一个标准操作流程</p>
-      <Button variant="primary" @click="goToCreate">＋ 新建 SOP</Button>
+    <div v-else-if="filteredSOPs.length === 0 && !searchQuery" class="flex-1 flex flex-col items-center justify-center gap-1">
+      <div class="w-16 h-16 rounded-2xl bg-accent-light flex items-center justify-center text-[32px] mb-2">📋</div>
+      <h3 class="text-[15px] font-bold text-text-heading">还没有 SOP</h3>
+      <p class="text-[12px] text-text-light mb-4">创建你的第一个标准操作流程，自动化重复分析工作</p>
+      <div class="flex gap-2">
+        <Button variant="secondary" @click="goToImport">📥 导入代码</Button>
+        <Button variant="primary" @click="goToCreate">＋ 新建 SOP</Button>
+      </div>
     </div>
 
     <!-- No Results -->
-    <div v-else-if="filteredSOPs.length === 0" class="flex-1 flex flex-col items-center justify-center">
-      <div class="text-[48px] mb-3">🔍</div>
-      <h3 class="text-[16px] font-bold text-text-heading mb-1">未找到结果</h3>
-      <p class="text-[12px] text-text-light">尝试使用其他关键词搜索</p>
+    <div v-else-if="filteredSOPs.length === 0" class="flex-1 flex flex-col items-center justify-center gap-1">
+      <div class="w-16 h-16 rounded-2xl bg-chip flex items-center justify-center text-[32px] mb-2">🔍</div>
+      <h3 class="text-[15px] font-bold text-text-heading">没有匹配结果</h3>
+      <p class="text-[12px] text-text-light">换个关键词试试，或者清空搜索框</p>
     </div>
 
     <!-- SOP Grid -->
     <div v-else class="flex-1 overflow-y-auto">
       <div class="grid grid-cols-2 gap-3">
-        <Card v-for="sop in filteredSOPs" :key="sop.id" :hoverable="true" class="flex flex-col gap-2.5">
+        <Card v-for="sop in filteredSOPs" :key="sop.id" :hoverable="true" class="flex flex-col gap-2.5 animate-fadein">
           <!-- Header -->
           <div class="flex items-start justify-between">
             <div class="flex-1">

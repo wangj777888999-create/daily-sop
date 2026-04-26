@@ -17,6 +17,6 @@ const emit = defineEmits<{
     @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
     :type="type || 'text'"
     :placeholder="placeholder"
-    class="w-full bg-page-bg border border-border rounded-md px-3 py-1.5 text-[12px] text-text-body placeholder-text-light outline-none transition-shadow focus:border-accent focus:shadow-input-focus"
+    class="w-full bg-page-bg border border-border rounded-md px-3 py-1.5 text-[12px] text-text-body placeholder:text-text-light outline-none transition-all duration-150 focus:border-accent focus:shadow-input-focus focus:bg-[#FFFDF9]"
   />
 </template>

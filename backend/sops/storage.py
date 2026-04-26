@@ -1,3 +1,4 @@
+import fcntl
 import json
 import os
 from typing import List, Optional
@@ -12,12 +13,17 @@ def _read_json(path: str):
     if not os.path.exists(path):
         return []
     with open(path, "r", encoding="utf-8") as f:
+        fcntl.flock(f, fcntl.LOCK_SH)
         return json.load(f)
 
 
 def _write_json(path: str, data):
-    with open(path, "w", encoding="utf-8") as f:
+    # Q4: 写临时文件再原子替换，防双开 IDE 时写冲突
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
         json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
 
 
 def get_all_sops() -> List[SOP]:

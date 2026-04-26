@@ -25,7 +25,9 @@ const pageTitle = computed(() => {
     <div class="flex flex-col flex-1 min-w-0">
       <TopBar :breadcrumbs="pageTitle" class="flex-shrink-0" />
       <main class="flex-1 p-xl overflow-y-auto">
-        <slot />
+        <div class="animate-fadein h-full">
+          <slot />
+        </div>
       </main>
     </div>
   </div>
