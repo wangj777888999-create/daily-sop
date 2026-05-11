@@ -3,7 +3,7 @@
 > 本章你将看到的代码：
 > - `backend/knowledge/parser.py`、`chunker.py`、`embedder.py`、`vector_store.py`、`generator.py`、`rag.py`
 > - `backend/api/knowledge_routes.py`
-> - `docs/rag-knowledge-base-plan.md`（详细规格）
+> - `docs/规划/2026-05-11-rag-knowledge-base-plan.md`（详细规格）
 
 **RAG**（Retrieval-Augmented Generation）= 检索增强生成。一句话讲清：**让 LLM 在生成前，先从你自己的资料库里找到相关片段，再把这些片段拼进 prompt**。
 
@@ -232,7 +232,7 @@ if not api_key:
 
 ## 延伸阅读
 
-- 项目内 `docs/rag-knowledge-base-plan.md` —— 完整规格的事实标准。
+- 项目内 `docs/规划/2026-05-11-rag-knowledge-base-plan.md` —— 完整规格的事实标准。
 - [Anthropic 的 Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval) —— 给 chunk 自动加上下文摘要后再 embed。
 - [HyDE 论文](https://arxiv.org/abs/2212.10496) —— 用 LLM 改写用户 query 提高召回。
 - ChromaDB [docs](https://docs.trychroma.com/)：collection、metadata filter、where 子句。

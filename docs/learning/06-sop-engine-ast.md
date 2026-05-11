@@ -252,7 +252,7 @@ pattern = r'^[\w\s\+\-\*/\.\'\"=<>!&\|(),]+$'
 
 ## 动手练习
 
-1. **跑一遍 round-trip**：找根目录的 `教练签到分析最终版.py`（用户样本），手动调用 `parse_code_with_sources(code)` 看 SOP，再 `SOPToExecutableCode(sop)` 看重生成代码——做个 diff。
+1. **跑一遍 round-trip**：找 `samples/教练签到分析最终版.py`（用户样本），手动调用 `parse_code_with_sources(code)` 看 SOP，再 `SOPToExecutableCode(sop)` 看重生成代码——做个 diff。
 2. **加 `fillna` 算子**（强推荐）：
    - 在 `code_parser.py` 加识别 `df.fillna(value)` 的分支。
    - 在 `code_generator.py` 加 `_generate_fillna` 派发。

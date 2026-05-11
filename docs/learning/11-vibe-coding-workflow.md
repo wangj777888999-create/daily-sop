@@ -2,7 +2,7 @@
 
 > 本章你将看到的：
 > - `CLAUDE.md`（项目记忆）
-> - `docs/local-audit-report.md`、`docs/rag-knowledge-base-plan.md`（计划与审计）
+> - `docs/规划/2026-04-26-local-audit-report.md`、`docs/规划/2026-05-11-rag-knowledge-base-plan.md`（计划与审计）
 > - 本仓库历史 commit message 风格
 
 **Vibe Coding** 不是只让 AI 替你写代码，而是**和 AI 协作设计 + 探索 + 落地 + 维护**——AI 是"会写代码的资深工程师"，你是项目主导。这一章把本项目里**已经被验证可行**的协作范式提炼出来。

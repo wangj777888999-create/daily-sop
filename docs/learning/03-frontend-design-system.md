@@ -4,13 +4,13 @@
 > - `tailwind.config.js`
 > - `src/composables/useDesignTokens.ts`
 > - `src/assets/styles/main.css`
-> - `ui.md`（仓库根目录的设计规范原稿）
+> - `docs/规划/ui-design-spec.md`（仓库根目录的设计规范原稿）
 
 ---
 
 ## 1. 为什么要"设计系统"，而不是直接写颜色
 
-随手翻一眼 `ui.md`（顶级设计稿），会发现有很多决策：
+随手翻一眼 `docs/规划/ui-design-spec.md`（顶级设计稿），会发现有很多决策：
 
 - 主背景 `#F7F3EC`（米白）+ 强调色 `#5B8F7A`（鼠尾草绿）。
 - 字号有 7 档（title-lg/md/sm + body + helper + label + micro）。
@@ -174,7 +174,7 @@ const iconBg = getIconBg(colors.accent) // → "rgba(91, 143, 122, 0.13)"
 
 ## 6. 设计风格定调（米白 + 鼠尾草绿）
 
-`ui.md` 把这个风格描述为：
+`docs/规划/ui-design-spec.md` 把这个风格描述为：
 
 > 温暖、内敛、不冷淡。强调"工作面板"而非"科技产品"，避免常见 SaaS 的纯白 + 蓝紫。
 

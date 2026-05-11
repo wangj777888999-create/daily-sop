@@ -7,8 +7,8 @@
 
 - **想了解项目的事实标准（栈、命令、契约）** → 看 [`CLAUDE.md`](./CLAUDE.md)
 - **想系统学习项目架构 / 做 vibe coding** → 看 [`docs/learning/00-README.md`](./docs/learning/00-README.md)
-- **想看 RAG 知识库的二期方案** → 看 [`docs/rag-knowledge-base-plan.md`](./docs/rag-knowledge-base-plan.md)
-- **想看本地审计修复历史** → 看 [`docs/local-audit-report.md`](./docs/local-audit-report.md)
+- **想看 RAG 知识库的二期方案** → 看 [`docs/规划/2026-05-11-rag-knowledge-base-plan.md`](./docs/规划/2026-05-11-rag-knowledge-base-plan.md)
+- **想看本地审计修复历史** → 看 [`docs/规划/2026-04-26-local-audit-report.md`](./docs/规划/2026-04-26-local-audit-report.md)
 - **想看当前评分与路线图** → 看 [`docs/learning/12-roadmap-and-quality.md`](./docs/learning/12-roadmap-and-quality.md)
 
 > 如果你是新人 / AI agent，**从 `CLAUDE.md` 开始读**。

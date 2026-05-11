@@ -73,7 +73,7 @@ app.include_router(knowledge_routes.router, prefix="/api")
 
 - **挂两个 router**：SOP 业务和知识库（RAG）业务。两边都顶着 `/api` 前缀，前端代理一刀切就够。
 - **`startup` 钩子提前加载 embedding 模型**：第一次 RAG 调用就不会让用户傻等几秒钟。
-- **没有 `add_middleware(CORSMiddleware)`**：`docs/local-audit-report.md` 的 Q5 已经说得很清楚——这是**本地单用户工具**，CORS 没必要加。
+- **没有 `add_middleware(CORSMiddleware)`**：`docs/规划/2026-04-26-local-audit-report.md` 的 Q5 已经说得很清楚——这是**本地单用户工具**，CORS 没必要加。
 
 ### 2.2 Vite 代理 `vite.config.ts:5-22`
 

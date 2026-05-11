@@ -39,7 +39,7 @@
 
 ### 重点 A — 完成 RAG 知识库
 
-落地 `docs/rag-knowledge-base-plan.md` 二期：从"骨架可用"到"可检索可引用"。
+落地 `docs/规划/2026-05-11-rag-knowledge-base-plan.md` 二期：从"骨架可用"到"可检索可引用"。
 
 #### A1. 后端
 
@@ -100,7 +100,7 @@
 ### 暂不做（明确延后）
 
 - **Analytics / Database 页面真实数据流**：占位但不在本期重点；用户愿意时再立项。
-- **多用户 / 鉴权 / CORS**：本地单用户工具，按 `docs/local-audit-report.md` Q7 延后。
+- **多用户 / 鉴权 / CORS**：本地单用户工具，按 `docs/规划/2026-04-26-local-audit-report.md` Q7 延后。
 - **前端 ESLint / 测试基建**：建议等 RAG 与 SOP 完工后再单独立项；不阻塞当前路径。
 - **过期的 `PROJECT_GUIDE.md`**：已改写为指向 `CLAUDE.md` 与本学习资料的桩文件。
 
