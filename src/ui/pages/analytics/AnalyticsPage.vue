@@ -70,7 +70,7 @@ const quickLabels: string[] = []
             <WBox label="拖拽上传\nExcel / CSV / JSON" class="w-full h-[76px] mb-2" />
             <div class="flex gap-1.5">
               <Button size="small" variant="secondary">数据库</Button>
-              <Button size="small" variant="secondary">知识库</Button>
+              <Button size="small" variant="secondary" @click="$router.push('/knowledge')">知识库</Button>
             </div>
           </Card>
 

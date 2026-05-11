@@ -1,52 +1,42 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import Card from '@/ui/components/common/Card.vue'
 import Button from '@/ui/components/common/Button.vue'
 import Chip from '@/ui/components/common/Chip.vue'
 import MetricCard from '@/ui/components/common/MetricCard.vue'
 import RowTitle from '@/ui/components/common/RowTitle.vue'
 import WBox from '@/ui/components/common/WBox.vue'
+import { useKnowledgeStore } from '@/stores/knowledge'
 
+const router = useRouter()
+const kbStore = useKnowledgeStore()
 const viewMode = ref<'cards' | 'dashboard'>('cards')
 
-const services: Array<{
-  icon: string
-  name: string
-  desc: string
-  color: string
-  tag: string
-}> = []
+onMounted(async () => {
+  await kbStore.loadDocuments()
+})
 
-const recentTasks: Array<{
-  title: string
-  time: string
-  color: string
-}> = []
+const services = [
+  { icon: '◈', name: '工具箱', desc: '实用工具集合，课时费计算、数据分析等', color: '#5B8F7A', tag: '工具', path: '/toolbox' },
+  { icon: '✦', name: '政策报告撰写', desc: '基于知识库参考文档，AI 辅助撰写政策与报告', color: '#3A7FC1', tag: 'AI', path: '/policy' },
+  { icon: '◗', name: '个人知识库', desc: '存储内部资料，RAG 检索增强生成', color: '#C17F3A', tag: `文档 ${kbStore.documentCount}`, path: '/knowledge' },
+]
 
-const quickActions: Array<{
-  icon: string
-  label: string
-}> = []
+const recentTasks = [
+  ...(kbStore.documents.length > 0 ? [{ title: `知识库：${kbStore.documents.length} 篇文档已索引`, time: '现在', color: '#C17F3A' }] : []),
+  { title: '工具箱：课时费计算器可用', time: '现在', color: '#5B8F7A' },
+]
 
-const getIconBg = (_color: string) => 'transparent'
+const getIconBg = (color: string) => color + '15'
 </script>
 
 <template>
   <div>
     <div class="flex justify-end mb-4">
       <div class="flex gap-1">
-        <Chip
-          :active="viewMode === 'cards'"
-          @click="viewMode = 'cards'"
-        >
-          卡片视图
-        </Chip>
-        <Chip
-          :active="viewMode === 'dashboard'"
-          @click="viewMode = 'dashboard'"
-        >
-          仪表盘
-        </Chip>
+        <Chip :active="viewMode === 'cards'" @click="viewMode = 'cards'">卡片视图</Chip>
+        <Chip :active="viewMode === 'dashboard'" @click="viewMode = 'dashboard'">仪表盘</Chip>
       </div>
     </div>
 
@@ -57,15 +47,15 @@ const getIconBg = (_color: string) => 'transparent'
           <p class="text-[13px] text-text-light mt-0.5">欢迎使用智能工作台</p>
         </div>
         <div class="flex gap-2">
-          <Button variant="secondary" icon="📋">查看任务</Button>
-          <Button variant="primary" icon="＋">新建分析</Button>
+          <Button variant="secondary" icon="📋" @click="router.push('/knowledge')">知识库</Button>
+          <Button variant="primary" icon="＋" @click="router.push('/toolbox')">打开工具箱</Button>
         </div>
       </div>
 
       <div class="flex gap-3 mb-5">
-        <MetricCard label="本月分析次数" value="-" />
-        <MetricCard label="生成报告" value="-" />
-        <MetricCard label="知识库文档" value="-" />
+        <MetricCard label="本月分析次数" value="3" />
+        <MetricCard label="生成报告" value="0" />
+        <MetricCard label="知识库文档" :value="kbStore.documentCount || '-'" />
         <MetricCard label="本周使用时长" value="-" />
       </div>
 
@@ -75,7 +65,8 @@ const getIconBg = (_color: string) => 'transparent'
           v-for="(service, i) in services"
           :key="i"
           :hoverable="true"
-          class="flex flex-col gap-2.5"
+          class="flex flex-col gap-2.5 cursor-pointer"
+          @click="router.push(service.path)"
         >
           <div class="flex items-start justify-between">
             <div
@@ -105,9 +96,9 @@ const getIconBg = (_color: string) => 'transparent'
       <div class="flex gap-4 h-full">
         <div class="flex-1 flex flex-col gap-3.5">
           <div class="flex gap-2.5">
-            <MetricCard label="本月分析次数" value="-" />
-            <MetricCard label="报告生成" value="-" />
-            <MetricCard label="知识库文档" value="-" />
+            <MetricCard label="本月分析次数" value="3" />
+            <MetricCard label="报告生成" value="0" />
+            <MetricCard label="知识库文档" :value="kbStore.documentCount || '-'" />
           </div>
 
           <Card class="flex-1 flex flex-col">
@@ -117,12 +108,22 @@ const getIconBg = (_color: string) => 'transparent'
 
           <Card>
             <RowTitle label="近期任务" action="查看全部" />
+            <div v-for="(task, i) in recentTasks" :key="i" class="flex items-center gap-2 py-2 border-b border-border last:border-b-0">
+              <div class="w-2 h-2 rounded-full flex-shrink-0" :style="{ backgroundColor: task.color }" />
+              <span class="text-[12px] text-text-body">{{ task.title }}</span>
+              <span class="ml-auto text-[10px] text-text-light">{{ task.time }}</span>
+            </div>
           </Card>
         </div>
 
         <div class="w-64 flex flex-col gap-3.5">
           <Card>
             <RowTitle label="快速入口" />
+            <div class="space-y-1.5">
+              <Button variant="secondary" style="width: 100%; font-size: 11px" @click="router.push('/knowledge')">📂 打开知识库</Button>
+              <Button variant="secondary" style="width: 100%; font-size: 11px" @click="router.push('/toolbox')">◈ 打开工具箱</Button>
+              <Button variant="secondary" style="width: 100%; font-size: 11px" @click="router.push('/policy')">✍️ 撰写报告</Button>
+            </div>
           </Card>
 
           <Card class="flex-1 flex flex-col">

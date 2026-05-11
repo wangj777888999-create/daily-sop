@@ -13,40 +13,16 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '工作台首页' }
   },
   {
-    path: '/sop',
-    name: 'sop',
-    component: () => import('@/ui/pages/sop/SOPList.vue'),
-    meta: { title: 'SOP 管理' }
+    path: '/toolbox',
+    name: 'toolbox',
+    component: () => import('@/ui/pages/toolbox/ToolboxPage.vue'),
+    meta: { title: '工具箱' }
   },
   {
-    path: '/sop/create',
-    name: 'sop-create',
-    component: () => import('@/ui/pages/sop/SOPCreate.vue'),
-    meta: { title: '新建 SOP' }
-  },
-  {
-    path: '/sop/import',
-    name: 'sop-import',
-    component: () => import('@/ui/pages/sop/SOPImport.vue'),
-    meta: { title: '导入 SOP' }
-  },
-  {
-    path: '/sop/annotate',
-    name: 'SOPAnnotate',
-    component: () => import('@/ui/pages/sop/SemanticAnnotation.vue'),
-    meta: { title: '语义标注' }
-  },
-  {
-    path: '/sop/execute/:sopId?',
-    name: 'sop-execute',
-    component: () => import('@/ui/pages/sop/SOPExecute.vue'),
-    meta: { title: '执行 SOP' }
-  },
-  {
-    path: '/sop/edit/:sopId',
-    name: 'sop-edit',
-    component: () => import('@/ui/pages/sop/SOPCreate.vue'),
-    meta: { title: '编辑 SOP' }
+    path: '/toolbox/:toolId',
+    name: 'toolbox-detail',
+    component: () => import('@/ui/pages/toolbox/ToolDetailPage.vue'),
+    meta: { title: '工具' }
   },
   {
     path: '/policy',

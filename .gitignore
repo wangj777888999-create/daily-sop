@@ -5,3 +5,8 @@ dist
 .env
 .env.*
 !.env.example
+__pycache__/
+*.pyc
+.claude/
+.pytest_cache/
+*.egg-info/

@@ -20,6 +20,12 @@ export interface AIMessage {
   role: 'ai' | 'user'
   content: string
   timestamp: number
+  sources?: Array<{
+    doc_name: string
+    chunk_text: string
+    heading_path: string
+    score: number
+  }>
 }
 
 // 导航项
@@ -43,7 +49,7 @@ export interface SOPTemplate {
 }
 
 // 文件类型
-export type FileType = 'PDF' | 'DOCX' | 'XLSX' | 'TXT'
+export type FileType = 'PDF' | 'DOCX' | 'XLSX' | 'TXT' | 'MD'
 
 // 文件项
 export interface FileItem {

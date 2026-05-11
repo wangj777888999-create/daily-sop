@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>钮沃课时费计算器</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root {
+  --pri: #4f46e5; --pri-l: #6366f1; --pri-d: #4338ca;
+  --pri-bg: #eef2ff; --pri-bg2: #e0e7ff;
+  --ok: #059669; --ok-bg: #ecfdf5;
+  --warn: #d97706; --warn-bg: #fffbeb;
+  --err: #e11d48; --err-bg: #fff1f2;
+  --g50:#f8fafc;--g100:#f1f5f9;--g200:#e2e8f0;--g300:#cbd5e1;
+  --g400:#94a3b8;--g500:#64748b;--g600:#475569;--g700:#334155;--g800:#1e293b;--g900:#0f172a;
+  --r:14px;--rs:10px;--rx:6px;
+  --sh-xs:0 1px 2px rgba(0,0,0,.04);
+  --sh:0 4px 6px -1px rgba(0,0,0,.07),0 2px 4px -2px rgba(0,0,0,.05);
+  --sh-md:0 10px 15px -3px rgba(0,0,0,.08);
+  --sh-lg:0 20px 25px -5px rgba(0,0,0,.1);
+  --t:all .2s cubic-bezier(.4,0,.2,1);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;background:#f5f5f7;color:var(--g800);line-height:1.5;min-height:100vh;-webkit-font-smoothing:antialiased}
+
+/* Header */
+.hdr{background:#fff;border-bottom:1px solid var(--g200);position:sticky;top:0;z-index:100;box-shadow:var(--sh-xs)}
+.hdr-in{max-width:1480px;margin:0 auto;padding:12px 32px;display:flex;justify-content:space-between;align-items:center}
+.hdr-l{display:flex;align-items:center;gap:12px}
+.logo{width:34px;height:34px;background:linear-gradient(135deg,var(--pri),var(--pri-l));border-radius:var(--rx);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:15px;box-shadow:0 2px 8px rgba(79,70,229,.3)}
+.hdr-t{font-size:16px;font-weight:700;color:var(--g900);letter-spacing:-.3px}
+.hdr-s{font-size:11px;color:var(--g400)}
+.hdr-r{display:flex;gap:6px;align-items:center}
+
+/* Nav tabs */
+.nav{max-width:1480px;margin:0 auto;padding:0 32px;display:flex;gap:0;border-bottom:1px solid var(--g200);background:#fff}
+.nav-tab{padding:12px 24px;border:none;background:none;font-size:13px;font-weight:500;color:var(--g500);cursor:pointer;border-bottom:2px solid transparent;transition:var(--t);position:relative}
+.nav-tab:hover{color:var(--g700)}
+.nav-tab.active{color:var(--pri);font-weight:600;border-bottom-color:var(--pri)}
+.nav-tab .badge{position:absolute;top:8px;right:8px;width:18px;height:18px;border-radius:50%;background:var(--ok);color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:600}
+
+/* Btn */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border:none;border-radius:var(--rx);font-size:12px;font-weight:500;cursor:pointer;transition:var(--t);white-space:nowrap;line-height:1.4;font-family:inherit}
+.btn svg{width:14px;height:14px;flex-shrink:0}
+.btn-p{background:var(--pri);color:#fff;box-shadow:0 1px 2px rgba(79,70,229,.2)}
+.btn-p:hover{background:var(--pri-d);transform:translateY(-1px)}
+.btn-g{background:transparent;color:var(--g600)}
+.btn-g:hover{background:var(--g100)}
+.btn-o{background:#fff;color:var(--g600);border:1px solid var(--g200)}
+.btn-o:hover{background:var(--g50);border-color:var(--g300)}
+.btn-ok{background:var(--ok);color:#fff}
+.btn-ok:hover{background:#047857}
+.btn-err{background:transparent;color:var(--g400);padding:3px 5px}
+.btn-err:hover{background:var(--err-bg);color:var(--err)}
+.btn-s{padding:4px 10px;font-size:11px}
+
+/* Container */
+.wrap{max-width:1480px;margin:0 auto;padding:20px 32px 40px}
+.page{display:none}.page.active{display:block}
+
+/* Upload grid */
+.up-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:20px}
+.up-card{background:#fff;border-radius:var(--r);padding:24px;border:2px dashed var(--g200);text-align:center;cursor:pointer;transition:var(--t);box-shadow:var(--sh-xs);position:relative}
+.up-card:hover,.up-card.over{border-color:var(--pri);background:var(--pri-bg);box-shadow:var(--sh)}
+.up-card.done{border-color:var(--ok);border-style:solid;background:var(--ok-bg)}
+.up-icon{width:48px;height:48px;margin:0 auto 12px;background:var(--g100);border-radius:12px;display:flex;align-items:center;justify-content:center;transition:var(--t)}
+.up-card:hover .up-icon{background:var(--pri-bg2);transform:scale(1.05)}
+.up-card.done .up-icon{background:var(--ok-bg)}
+.up-icon svg{width:22px;height:22px;color:var(--g500)}
+.up-card.done .up-icon svg{color:var(--ok)}
+.up-card h4{font-size:14px;color:var(--g700);margin-bottom:4px;font-weight:600}
+.up-card p{font-size:12px;color:var(--g400)}
+.up-card input{display:none}
+.up-badge{position:absolute;top:12px;right:12px;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
+.up-badge.ok{background:var(--ok);color:#fff}
+.up-badge.wait{background:var(--g200);color:var(--g500)}
+.up-fname{font-size:11px;color:var(--ok);margin-top:6px;font-weight:500}
+
+/* Data preview */
+.preview-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh-xs);overflow:hidden;margin-bottom:20px}
+.preview-hdr{padding:12px 20px;border-bottom:1px solid var(--g100);display:flex;justify-content:space-between;align-items:center}
+.preview-hdr h3{font-size:13px;font-weight:600;color:var(--g700)}
+.preview-hdr .cnt{font-size:11px;color:var(--g400)}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead{background:var(--g50)}
+th{padding:8px 12px;text-align:left;font-weight:600;color:var(--g500);font-size:10px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--g200);white-space:nowrap;user-select:none}
+td{padding:8px 12px;border-bottom:1px solid var(--g100);color:var(--g700);vertical-align:middle}
+tbody tr{transition:var(--t)}tbody tr:hover{background:var(--g50)}
+
+/* Type badge */
+.type-tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600}
+.type-校队{background:#dbeafe;color:#1d4ed8}
+.type-兴趣班{background:#fce7f3;color:#be185d}
+.type-体育课{background:#e0e7ff;color:#4338ca}
+.type-梯队{background:#d1fae5;color:#065f46}
+.type-晚托班{background:#fef3c7;color:#92400e}
+.type-社团课{background:#ede9fe;color:#5b21b6}
+.type-统包课{background:#f3f4f6;color:#374151}
+
+/* Status badge */
+.st-tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:500}
+.st-在岗{background:var(--ok-bg);color:var(--ok)}
+.st-迟到{background:var(--warn-bg);color:var(--warn)}
+.st-早退{background:#fef9c3;color:#a16207}
+.st-旷工{background:var(--err-bg);color:var(--err)}
+
+/* ===== Rules Page ===== */
+
+/* Coach type list */
+.coach-type-list{min-height:60px;max-height:420px;overflow-y:auto}
+.ct-item{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;border-bottom:1px solid var(--g50);transition:var(--t)}
+.ct-item:hover{background:var(--g50)}
+.ct-item .ct-name{font-size:13px;font-weight:500;color:var(--g700)}
+.ct-item .ct-courses{font-size:11px;color:var(--g400)}
+.ct-item select{border:1px solid var(--g200);border-radius:var(--rx);padding:3px 8px;font-size:11px;outline:none;font-family:inherit;background:#fff;cursor:pointer}
+.ct-item select:focus{border-color:var(--pri)}
+.rules-layout{display:grid;grid-template-columns:240px 1fr;gap:16px;min-height:600px}
+/* Sidebar */
+.sidebar{background:#fff;border-radius:var(--r);box-shadow:var(--sh-xs);overflow:hidden}
+.sb-search{padding:12px;border-bottom:1px solid var(--g100)}
+.sb-search input{width:100%;border:1px solid var(--g200);border-radius:var(--rx);padding:7px 10px;font-size:12px;outline:none;transition:var(--t);font-family:inherit}
+.sb-search input:focus{border-color:var(--pri);box-shadow:0 0 0 3px rgba(79,70,229,.08)}
+.sb-list{max-height:520px;overflow-y:auto}
+.sb-item{padding:10px 14px;cursor:pointer;transition:var(--t);border-left:3px solid transparent;display:flex;justify-content:space-between;align-items:center}
+.sb-item:hover{background:var(--g50)}
+.sb-item.active{background:var(--pri-bg);border-left-color:var(--pri)}
+.sb-item .name{font-size:13px;font-weight:500;color:var(--g700)}
+.sb-item .meta{font-size:10px;color:var(--g400);margin-top:1px}
+.sb-item .cnt{font-size:10px;background:var(--g100);color:var(--g500);padding:1px 6px;border-radius:8px}
+
+/* Rule panel */
+.rule-panel{background:#fff;border-radius:var(--r);box-shadow:var(--sh-xs);overflow:hidden}
+.rp-header{padding:16px 20px;border-bottom:1px solid var(--g100);display:flex;justify-content:space-between;align-items:center}
+.rp-header h3{font-size:15px;font-weight:700;color:var(--g900)}
+.rp-header .coach-info{font-size:12px;color:var(--g400)}
+.rp-section{padding:16px 20px;border-bottom:1px solid var(--g100)}
+.rp-section:last-child{border-bottom:none}
+.rp-section h4{font-size:12px;font-weight:600;color:var(--g500);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.rp-section h4 .dot{width:6px;height:6px;border-radius:50%}
+
+/* Rule table */
+.rule-tbl{width:100%;border-collapse:collapse}
+.rule-tbl th{padding:8px 12px;font-size:11px;text-align:left;font-weight:600;color:var(--g500);border-bottom:1px solid var(--g200);white-space:nowrap}
+.rule-tbl td{padding:10px 12px;border-bottom:1px solid var(--g100);font-size:13px;white-space:nowrap}
+.rule-tbl select,.rule-tbl input{border:1px solid var(--g200);border-radius:var(--rx);padding:6px 10px;font-size:13px;outline:none;transition:var(--t);font-family:inherit;background:#fff;height:32px;box-sizing:border-box}
+.rule-tbl select:focus,.rule-tbl input:focus{border-color:var(--pri);box-shadow:0 0 0 2px rgba(79,70,229,.08)}
+.rule-tbl select{cursor:pointer;min-width:140px}
+.rule-tbl input[type="number"]{width:80px;text-align:center}
+.rule-tbl .rate-cell{display:flex;align-items:center;gap:4px}
+.rule-tbl .rate-cell span{font-size:12px;color:var(--g400);flex-shrink:0}
+.rule-tbl .rate-cell input{width:70px}
+/* Global rate cell */
+.rate-cell{display:inline-flex;align-items:center;gap:4px}
+.rate-cell span{font-size:12px;color:var(--g400);flex-shrink:0}
+.rate-cell input{width:70px;border:1px solid var(--g200);border-radius:var(--rx);padding:6px 10px;font-size:13px;outline:none;font-family:inherit;background:#fff;height:32px;box-sizing:border-box}
+.rate-cell input:focus{border-color:var(--pri);box-shadow:0 0 0 2px rgba(79,70,229,.08)}
+.rule-add{margin-top:8px}
+
+/* Empty rule state */
+.empty-rule{text-align:center;padding:32px;color:var(--g400)}
+.empty-rule svg{width:32px;height:32px;opacity:.4;margin-bottom:8px}
+.empty-rule p{font-size:12px}
+
+/* Rule actions */
+.rule-actions{display:flex;gap:6px;padding:12px 20px;border-top:1px solid var(--g100);background:var(--g50)}
+
+/* ===== Calc Page ===== */
+.calc-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+.cs-card{background:#fff;border-radius:var(--rs);padding:14px 18px;box-shadow:var(--sh-xs);display:flex;align-items:center;gap:12px;transition:var(--t)}
+.cs-card:hover{box-shadow:var(--sh);transform:translateY(-1px)}
+.cs-icon{width:38px;height:38px;border-radius:var(--rx);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.cs-icon svg{width:18px;height:18px}
+.cs-icon.b{background:var(--pri-bg);color:var(--pri)}
+.cs-icon.g{background:var(--ok-bg);color:var(--ok)}
+.cs-icon.a{background:var(--warn-bg);color:var(--warn)}
+.cs-icon.r{background:var(--err-bg);color:var(--err)}
+.cs-label{font-size:11px;color:var(--g400);font-weight:500}
+.cs-val{font-size:20px;font-weight:700;color:var(--g900);letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.cs-val .u{font-size:12px;font-weight:500;color:var(--g500);margin-left:2px}
+
+/* Summary grid */
+.sum-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px}
+.sum-card{background:#fff;border-radius:var(--r);box-shadow:var(--sh-xs);overflow:hidden}
+.sum-hdr{padding:12px 18px;border-bottom:1px solid var(--g100);font-size:12px;font-weight:600;color:var(--g700);display:flex;align-items:center;gap:6px}
+.sum-hdr .d{width:7px;height:7px;border-radius:50%}
+.sum-body{max-height:300px;overflow-y:auto}
+.sum-tbl{width:100%;border-collapse:collapse}
+.sum-tbl td{padding:7px 18px;border-bottom:1px solid var(--g50);font-size:12px}
+.sum-tbl tr:last-child td{border-bottom:none}
+.sum-tbl tr:hover td{background:var(--g50)}
+.sn{font-weight:500;color:var(--g700)}
+.sm{text-align:right;color:var(--g400);font-size:10px}
+.sa{text-align:right;font-weight:700;color:var(--pri);font-variant-numeric:tabular-nums}
+
+/* Dept bar */
+.dl{padding:10px 18px}
+.di{display:flex;align-items:center;padding:8px 10px;border-radius:var(--rx);transition:var(--t)}
+.di:hover{background:var(--g50)}
+.di-n{font-size:12px;color:var(--g600);font-weight:500;min-width:80px}
+.di-bar{flex:1;margin:0 10px;height:4px;background:var(--g100);border-radius:2px;overflow:hidden}
+.di-fill{height:100%;background:var(--pri);border-radius:2px;transition:width .5s ease}
+.di-a{font-size:13px;font-weight:700;color:var(--g800);font-variant-numeric:tabular-nums}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--g900);color:#fff;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:500;box-shadow:var(--sh-lg);opacity:0;transition:all .3s ease;z-index:999;display:flex;align-items:center;gap:8px}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+/* Modal */
+.mo{display:none;position:fixed;inset:0;background:rgba(15,23,42,.4);backdrop-filter:blur(8px);z-index:200;align-items:center;justify-content:center}
+.mo.show{display:flex}
+.mo-box{background:#fff;border-radius:var(--r);box-shadow:var(--sh-lg);width:460px;max-height:85vh;overflow-y:auto;padding:24px;animation:slideUp .2s ease}
+@keyframes slideUp{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}
+.mo-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+.mo-head h3{font-size:16px;font-weight:700;color:var(--g900)}
+.mo-x{width:26px;height:26px;border:none;background:var(--g100);border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--g500);transition:var(--t)}
+.mo-x:hover{background:var(--g200);color:var(--g700)}
+.fg{margin-bottom:12px}
+.fg label{display:block;font-size:11px;font-weight:600;color:var(--g500);margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px}
+.fg input,.fg select{width:100%;border:1px solid var(--g200);border-radius:var(--rx);padding:8px 10px;font-size:13px;outline:none;transition:var(--t);font-family:inherit}
+.fg input:focus,.fg select:focus{border-color:var(--pri);box-shadow:0 0 0 3px rgba(79,70,229,.08)}
+.mo-act{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;padding-top:14px;border-top:1px solid var(--g100)}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--g200);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--g300)}
+
+/* Responsive */
+@media(max-width:1024px){.up-grid{grid-template-columns:1fr}.rules-layout{grid-template-columns:1fr}.calc-stats{grid-template-columns:repeat(2,1fr)}.sum-grid{grid-template-columns:1fr}}
+@media(max-width:768px){.wrap{padding:12px 16px}.hdr-in{padding:10px 16px}.nav{padding:0 16px}}
+
+::selection{background:var(--pri-bg2);color:var(--pri-d)}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-in">
+    <div class="hdr-l">
+      <div class="logo">N</div>
+      <div><div class="hdr-t">钮沃课时费计算器</div><div class="hdr-s">Coach Fee Calculator</div></div>
+    </div>
+    <div class="hdr-r">
+      <button class="btn btn-o" onclick="exportRules()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        导出规则
+      </button>
+      <button class="btn btn-o" onclick="document.getElementById('ruleFileInput').click()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        导入规则
+      </button>
+      <input type="file" id="ruleFileInput" accept=".json" style="display:none" onchange="importRules(event)">
+    </div>
+  </div>
+</header>
+
+<nav class="nav">
+  <button class="nav-tab active" onclick="switchPage('import',this)">数据导入<span class="badge" id="b_import" style="display:none">!</span></button>
+  <button class="nav-tab" onclick="switchPage('coaches',this)">教练管理</button>
+  <button class="nav-tab" onclick="switchPage('rules',this)">规则配置<span class="badge" id="b_rules" style="display:none">!</span></button>
+  <button class="nav-tab" onclick="switchPage('calc',this)">计算结果<span class="badge" id="b_calc" style="display:none">!</span></button>
+</nav>
+
+<div class="wrap">
+
+<!-- ===== Page 1: Data Import ===== -->
+<div class="page active" id="page_import">
+  <div class="up-grid">
+    <div class="up-card" id="up1" onclick="document.getElementById('f1').click()">
+      <span class="up-badge wait" id="b1">未上传</span>
+      <div class="up-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+      <h4>月度校内分析表</h4>
+      <p>课程数据 + 签到记录（自动读取教练签到sheet）</p>
+      <div class="up-fname" id="f1n"></div>
+      <input type="file" id="f1" accept=".xlsx,.xls" onchange="handleUpload(1,event)">
+    </div>
+    <div class="up-card" id="up2" onclick="document.getElementById('f2').click()">
+      <span class="up-badge wait" id="b2">未上传</span>
+      <div class="up-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg></div>
+      <h4>课程类型映射表 <span style="font-size:10px;color:var(--g400);font-weight:400">（可选）</span></h4>
+      <p>课程名称 → 类型（校队/兴趣班/…）</p>
+      <div class="up-fname" id="f2n"></div>
+      <input type="file" id="f2" accept=".xlsx,.xls" onchange="handleUpload(2,event)">
+    </div>
+  </div>
+
+  <!-- Start calc button -->
+  <div id="startCalcBar" style="display:none;margin-bottom:16px;background:#fff;border-radius:var(--rs);padding:14px 20px;box-shadow:var(--sh-xs);align-items:center;justify-content:space-between">
+    <div style="font-size:13px;color:var(--g600)">数据已就绪，共 <strong id="readyCount">0</strong> 条课程</div>
+    <button class="btn btn-p" onclick="startCalc()">▶ 开始计算</button>
+  </div>
+
+  <!-- Merged preview -->
+  <div class="preview-card" id="previewCard" style="display:none">
+    <div class="preview-hdr">
+      <h3>合并数据预览</h3>
+      <span class="cnt" id="previewCnt"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>#</th><th>部门</th><th>学校</th><th>课程名称</th><th>课程类型</th><th>教练</th>
+          <th>人次</th><th>课次(表)</th><th>确收金额</th><th>签到课次</th><th>在岗</th><th>迟到</th><th>早退</th><th>旷工</th>
+        </tr></thead>
+        <tbody id="previewBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Page 2: Coach Management ===== -->
+<div class="page" id="page_coaches">
+  <div class="rule-panel" style="margin-bottom:16px">
+    <div class="rp-header">
+      <div>
+        <h3>教练分类管理</h3>
+        <div class="coach-info">为每位教练指定所属分类，计算结果将按分类导出到不同 sheet</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-o btn-s" onclick="autoAssignCoaches()">自动识别分类</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-top:1px solid var(--g100)">
+      <!-- 全职 -->
+      <div style="border-right:1px solid var(--g100)">
+        <div style="padding:12px 16px;background:var(--pri-bg);border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:8px">
+          <span class="type-tag type-校队" style="font-size:12px;padding:3px 10px">全职教练</span>
+          <span style="font-size:11px;color:var(--g400)" id="ct_fulltime_cnt">0人</span>
+        </div>
+        <div id="ct_fulltime" class="coach-type-list"></div>
+      </div>
+      <!-- 0571 -->
+      <div style="border-right:1px solid var(--g100)">
+        <div style="padding:12px 16px;background:var(--ok-bg);border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:8px">
+          <span class="type-tag type-梯队" style="font-size:12px;padding:3px 10px">0571教练</span>
+          <span style="font-size:11px;color:var(--g400)" id="ct_0571_cnt">0人</span>
+        </div>
+        <div id="ct_0571" class="coach-type-list"></div>
+      </div>
+      <!-- 兼职 -->
+      <div>
+        <div style="padding:12px 16px;background:var(--warn-bg);border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:8px">
+          <span class="type-tag type-兴趣班" style="font-size:12px;padding:3px 10px">兼职教练</span>
+          <span style="font-size:11px;color:var(--g400)" id="ct_parttime_cnt">0人</span>
+        </div>
+        <div id="ct_parttime" class="coach-type-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Unassigned -->
+  <div class="rule-panel" id="unassignedPanel" style="display:none">
+    <div class="rp-header">
+      <h3 style="color:var(--warn)">未分类教练</h3>
+    </div>
+    <div id="ct_unassigned" class="coach-type-list" style="border-top:1px solid var(--g100)"></div>
+  </div>
+</div>
+
+<!-- ===== Page 3: Rules ===== -->
+<div class="page" id="page_rules">
+  <div class="rules-layout">
+    <div class="sidebar">
+      <div class="sb-search"><input placeholder="搜索教练…" oninput="filterCoaches(this.value)"></div>
+      <div class="sb-list" id="coachList"></div>
+    </div>
+    <div class="rule-panel" id="rulePanel">
+      <div class="empty-rule" id="ruleEmpty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        <p>请先导入数据，或从左侧选择教练</p>
+      </div>
+      <div id="ruleContent" style="display:none">
+        <div class="rp-header">
+          <div>
+            <h3 id="rpCoachName"></h3>
+            <div class="coach-info" id="rpCoachMeta"></div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-p btn-s" onclick="addRuleRow()">+ 添加课程规则</button>
+            <button class="btn btn-o btn-s" onclick="addCoachTransRow()">+ 添加交通补贴</button>
+            <button class="btn btn-o btn-s" onclick="addCoachSubRow()">+ 添加课时补贴</button>
+          </div>
+        </div>
+        <div class="rp-section">
+          <h4><div class="dot" style="background:var(--pri)"></div>课程费率规则</h4>
+          <table class="rule-tbl"><thead><tr>
+            <th>课程名称</th><th>计算方式</th><th>费率/单价</th><th style="width:50px"></th>
+          </tr></thead><tbody id="ruleRows"></tbody></table>
+          <div class="rule-add" id="noRulesHint" style="display:none"><span style="font-size:11px;color:var(--g400)">暂无规则，点击上方添加</span></div>
+        </div>
+        <div class="rp-section">
+          <h4><div class="dot" style="background:var(--warn)"></div>交通补贴（按天计算）</h4>
+          <table class="rule-tbl"><thead><tr>
+            <th>学校名称</th><th>单价（元/天）</th><th style="width:50px"></th>
+          </tr></thead><tbody id="coachTransRows"></tbody></table>
+          <div class="rule-add" id="noTransHint" style="display:none"><span style="font-size:11px;color:var(--g400)">该教练暂无交通补贴</span></div>
+        </div>
+        <div class="rp-section">
+          <h4><div class="dot" style="background:var(--pri)"></div>课时补贴（按课次计算）</h4>
+          <div style="font-size:11px;color:var(--g400);margin-bottom:8px">选择课程后自动识别不同时长，为每个时长设置补贴单价</div>
+          <div id="coachSubRows"></div>
+          <div class="rule-add" id="noSubHint" style="display:none"><span style="font-size:11px;color:var(--g400)">该教练暂无课时补贴</span></div>
+        </div>
+        <div class="rule-actions">
+          <button class="btn btn-p btn-s" onclick="saveRules();toast('规则已保存到本地')">保存规则</button>
+          <button class="btn btn-ok btn-s" onclick="calcFromRules()">▶ 运行计算</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== Page 3: Calc ===== -->
+<div class="page" id="page_calc">
+  <div class="calc-stats" id="calcStats">
+    <div class="cs-card"><div class="cs-icon b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg></div><div><div class="cs-label">课程总数</div><div class="cs-val" id="c_courses">0<span class="u">门</span></div></div></div>
+    <div class="cs-card"><div class="cs-icon g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div><div class="cs-label">教练人数</div><div class="cs-val" id="c_coaches">0<span class="u">人</span></div></div></div>
+    <div class="cs-card"><div class="cs-icon a"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div><div class="cs-label">确收总额</div><div class="cs-val" id="c_rev">¥0</div></div></div>
+    <div class="cs-card"><div class="cs-icon r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div><div><div class="cs-label">课时费总计</div><div class="cs-val" id="c_total">¥0</div></div></div>
+  </div>
+
+  <!-- Calc table -->
+  <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
+    <span style="font-size:12px;color:var(--g500);font-weight:600">筛选：</span>
+    <select id="fltCoach" onchange="applyCalcFilter()" style="border:1px solid var(--g200);border-radius:var(--rx);padding:6px 10px;font-size:12px;outline:none;font-family:inherit;background:#fff;min-width:120px">
+      <option value="">全部教练</option>
+    </select>
+    <select id="fltDept" onchange="applyCalcFilter()" style="border:1px solid var(--g200);border-radius:var(--rx);padding:6px 10px;font-size:12px;outline:none;font-family:inherit;background:#fff;min-width:120px">
+      <option value="">全部部门</option>
+    </select>
+    <select id="fltType" onchange="applyCalcFilter()" style="border:1px solid var(--g200);border-radius:var(--rx);padding:6px 10px;font-size:12px;outline:none;font-family:inherit;background:#fff;min-width:100px">
+      <option value="">全部类型</option>
+    </select>
+    <select id="fltCat" onchange="applyCalcFilter()" style="border:1px solid var(--g200);border-radius:var(--rx);padding:6px 10px;font-size:12px;outline:none;font-family:inherit;background:#fff;min-width:100px">
+      <option value="">全部分类</option>
+      <option value="fulltime">全职</option>
+      <option value="0571">0571</option>
+      <option value="parttime">兼职</option>
+    </select>
+    <button class="btn btn-g btn-s" onclick="resetCalcFilter()">清除筛选</button>
+  </div>
+
+  <div class="preview-card">
+    <div class="preview-hdr">
+      <h3>课时费计算明细</h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="cnt" id="calcCnt"></span>
+        <select id="exportDept" style="border:1px solid var(--g200);border-radius:var(--rx);padding:4px 8px;font-size:11px;font-family:inherit;background:#fff">
+          <option value="">全部部门</option>
+        </select>
+        <button class="btn btn-o btn-s" onclick="exportCalcCSV()">导出 XLSX</button>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>#</th><th>部门</th><th>学校</th><th>课程</th><th>类型</th><th>教练</th>
+          <th>课次</th><th>确收</th><th>计算公式</th><th>课时费</th>
+        </tr></thead>
+        <tbody id="calcBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="sum-grid" style="margin-top:16px">
+    <div class="sum-card">
+      <div class="sum-hdr"><div class="d" style="background:var(--pri)"></div>按教练汇总</div>
+      <div class="sum-body"><table class="sum-tbl"><tbody id="calcCoachSum"></tbody></table></div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-hdr"><div class="d" style="background:var(--ok)"></div>按部门汇总</div>
+      <div class="sum-body"><div class="dl" id="calcDeptSum"></div></div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-hdr"><div class="d" style="background:var(--warn)"></div>补助明细</div>
+      <div class="sum-body"><table class="sum-tbl"><tbody id="calcSubsidySum"></tbody></table></div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /wrap -->
+
+<!-- Toast -->
+<div class="toast" id="toast"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span id="toastMsg"></span></div>
+
+<script>
+// ===== State =====
+let DATA = { courses: [], typeMap: {}, attendance: {} }; // parsed data
+let RULES = { coaches: {}, defaultRule: { method: 'revenue_pct', rate: 0.25 } }; // rule config
+let SUBSIDIES = {}; // deprecated, subsidies now per-coach
+let COACH_CAT = {}; // coachName → 'fulltime' | '0571' | 'parttime'
+let CALC = []; // calculation results
+let SUBSIDY_CALC = []; // subsidy calculation results
+const CAT_LABELS = { fulltime: '全职教练', '0571': '0571教练', parttime: '兼职教练' };
+let selectedCoach = '';
+
+const METHOD_LABELS = { revenue_pct:'确收×百分比', lessons_unit:'课次×固定单价', lessons_base_pct:'课次×基数×百分比', min_two:'取小值', fixed:'固定金额', skip:'合作项目' };
+
+// ===== Page Nav =====
+function switchPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page_' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'coaches') renderCoachCategories();
+  if (name === 'rules') renderCoachList();
+  if (name === 'calc') renderCalc();
+}
+
+// ===== Auto Save/Load Rules =====
+const STORAGE_KEY = 'niuwo_fee_rules';
+
+function saveRules() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ rules: RULES, subsidies: SUBSIDIES, coachCat: COACH_CAT }));
+  } catch(e) {}
+}
+
+function loadRules() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
+      if (data.rules) { RULES = data.rules; SUBSIDIES = data.subsidies || SUBSIDIES; COACH_CAT = data.coachCat || {}; }
+      else { RULES = data; }
+      if (!RULES.coaches) RULES.coaches = {};
+      if (!RULES.defaultRule) RULES.defaultRule = { method: 'revenue_pct', rate: 0.25 };
+      return true;
+    }
+  } catch(e) {}
+  return false;
+}
+
+// Auto-load on page open
+(function() {
+  if (loadRules()) {
+    // will render when data is loaded
+  }
+})();
+
+// ===== File Upload =====
+function handleUpload(idx, e) {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const wb = XLSX.read(ev.target.result, { type: 'array' });
+      if (idx === 1) {
+        // 校内分析 sheet
+        const ws1 = wb.Sheets[wb.SheetNames[0]];
+        parseCourses(XLSX.utils.sheet_to_json(ws1, { header: 1, defval: '' }));
+        // 自动读取教练签到 sheet
+        const attSheetName = wb.SheetNames.find(n => n.includes('签到'));
+        if (attSheetName) {
+          const wsAtt = wb.Sheets[attSheetName];
+          parseAttendance(XLSX.utils.sheet_to_json(wsAtt, { header: 1, defval: '' }));
+        }
+      }
+      if (idx === 2) parseTypes(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' }));
+      markUploaded(idx, file.name);
+      mergeData();
+      toast('上传成功: ' + file.name);
+    } catch(err) { toast('解析失败: ' + err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+  e.target.value = '';
+}
+
+function markUploaded(idx, name) {
+  document.getElementById('up' + idx).classList.add('done');
+  const b = document.getElementById('b' + idx);
+  b.textContent = '已上传'; b.className = 'up-badge ok';
+  document.getElementById('f' + idx + 'n').textContent = name;
+}
+
+function parseCourses(data) {
+  DATA.courses = [];
+  let start = 0;
+  for (let i = 0; i < Math.min(5, data.length); i++) {
+    if (data[i].some(c => String(c).includes('教练姓名'))) { start = i + 1; break; }
+  }
+  let lastDept = '', lastSchool = '';
+  for (let i = start; i < data.length; i++) {
+    const r = data[i];
+    if (!r[2] && !r[3]) continue;
+    const coach = String(r[3]||'').trim();
+    if (!coach) continue;
+    const dept = String(r[0]||'').trim() || lastDept;
+    const school = String(r[1]||'').trim() || lastSchool;
+    lastDept = dept; lastSchool = school;
+    // 名加课 格式：教练名_课程名 → 提取 _ 后的课程名
+    const rawCourse = String(r[2]||'').trim();
+    const underscoreIdx = rawCourse.indexOf('_');
+    const courseName = underscoreIdx >= 0 ? rawCourse.substring(underscoreIdx + 1).trim() : rawCourse;
+    DATA.courses.push({
+      dept, school,
+      course: courseName,       // 提取后的课程名（用于匹配类型和签到）
+      courseRaw: rawCourse,     // 原始名加课字段
+      coach, people: Number(r[4])||0, lessons: Number(r[5])||0,
+      revenue: Number(r[6])||0, type: '', attInfo: null
+    });
+  }
+}
+
+function parseTypes(data) {
+  DATA.typeMap = {};
+  for (let i = 1; i < data.length; i++) {
+    const name = String(data[i][0]||'').trim();
+    const type = String(data[i][1]||'').trim();
+    if (name && type) DATA.typeMap[name] = type;
+  }
+}
+
+function calcDurationMin(start, end) {
+  if (!start || !end) return 0;
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return 0;
+  return (eh * 60 + em) - (sh * 60 + sm);
+}
+
+function parseAttendance(data) {
+  DATA.attendance = {};
+  for (let i = 1; i < data.length; i++) {
+    const r = data[i];
+    const coach = String(r[4]||'').trim();
+    const course = String(r[3]||'').trim();
+    const date = String(r[5]||'').trim();
+    const startTime = String(r[6]||'').trim();
+    const endTime = String(r[7]||'').trim();
+    const status = String(r[10]||'').trim();
+    if (!coach || !course) continue;
+    const key = coach + '|' + course;
+    if (!DATA.attendance[key]) DATA.attendance[key] = { total: 0, 在岗: 0, 迟到: 0, 早退: 0, 旷工: 0, dates: new Set(), durationMap: {} };
+    const a = DATA.attendance[key];
+    if (date) a.dates.add(date);
+    a.total++;
+    if (status in a) a[status]++;
+    const dur = calcDurationMin(startTime, endTime);
+    if (dur > 0) a.durationMap[dur] = (a.durationMap[dur] || 0) + 1;
+  }
+  // Convert sets to arrays (keep dates for subsidy calculation)
+  Object.values(DATA.attendance).forEach(a => { a.dateList = [...a.dates]; a.days = a.dates.size; delete a.dates; });
+}
+
+function mergeData() {
+  DATA.courses.forEach(c => {
+    c.type = DATA.typeMap[c.course] || '';
+    const key = c.coach + '|' + c.course;
+    c.attInfo = DATA.attendance[key] || null;
+  });
+  renderPreview();
+  if (DATA.courses.length) {
+    document.getElementById('b_import').style.display = 'flex';
+    document.getElementById('b_import').textContent = '✓';
+    document.getElementById('startCalcBar').style.display = 'flex';
+    document.getElementById('readyCount').textContent = DATA.courses.length;
+  }
+}
+
+function renderPreview() {
+  if (!DATA.courses.length) return;
+  document.getElementById('previewCard').style.display = 'block';
+  document.getElementById('previewCnt').textContent = DATA.courses.length + ' 条';
+  document.getElementById('previewBody').innerHTML = DATA.courses.map((c, i) => {
+    const a = c.attInfo;
+    return `<tr>
+      <td style="color:var(--g400);font-size:11px">${i+1}</td>
+      <td>${esc(c.dept.replace('教培',''))}</td>
+      <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.school)}">${esc(c.school)}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.course)}">${esc(trunc(c.course,16))}</td>
+      <td>${c.type ? '<span class="type-tag type-'+c.type+'">'+c.type+'</span>' : '<span style="color:var(--g300)">未匹配</span>'}</td>
+      <td style="font-weight:600">${esc(c.coach)}</td>
+      <td>${c.people}</td><td>${c.lessons}</td>
+      <td>¥${fn(c.revenue)}</td>
+      <td>${a ? a.total : '—'}</td>
+      <td>${a ? '<span class="st-tag st-在岗">'+a.在岗+'</span>' : '—'}</td>
+      <td>${a ? '<span class="st-tag st-迟到">'+a.迟到+'</span>' : '—'}</td>
+      <td>${a ? '<span class="st-tag st-早退">'+a.早退+'</span>' : '—'}</td>
+      <td>${a ? '<span class="st-tag st-旷工">'+a.旷工+'</span>' : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ===== Coach Category Management =====
+function renderCoachCategories() {
+  const coaches = [...new Set(DATA.courses.map(c => c.coach))].sort((a,b) => a.localeCompare(b,'zh'));
+  const groups = { fulltime: [], '0571': [], parttime: [], unassigned: [] };
+  coaches.forEach(name => {
+    const cat = COACH_CAT[name];
+    if (cat === 'fulltime') groups.fulltime.push(name);
+    else if (cat === '0571') groups['0571'].push(name);
+    else if (cat === 'parttime') groups.parttime.push(name);
+    else groups.unassigned.push(name);
+  });
+  ['fulltime','0571','parttime'].forEach(cat => {
+    const el = document.getElementById('ct_' + cat);
+    const cntEl = document.getElementById('ct_' + cat + '_cnt');
+    cntEl.textContent = groups[cat].length + '人';
+    el.innerHTML = groups[cat].length ? groups[cat].map(name => {
+      const courseCount = DATA.courses.filter(c => c.coach === name).length;
+      return `<div class="ct-item">
+        <div><span class="ct-name">${esc(name)}</span><span class="ct-courses"> ${courseCount}门课</span></div>
+        <select onchange="setCoachCategory('${esc(name)}',this.value)">
+          <option value="fulltime" ${cat==='fulltime'?'selected':''}>全职</option>
+          <option value="0571" ${cat==='0571'?'selected':''}>0571</option>
+          <option value="parttime" ${cat==='parttime'?'selected':''}>兼职</option>
+          <option value="" ${!cat?'selected':''}>未分类</option>
+        </select>
+      </div>`;
+    }).join('') : '<div style="padding:20px;text-align:center;color:var(--g300);font-size:12px">暂无教练</div>';
+  });
+  // Unassigned
+  const up = document.getElementById('unassignedPanel');
+  const uel = document.getElementById('ct_unassigned');
+  if (groups.unassigned.length) {
+    up.style.display = 'block';
+    uel.innerHTML = groups.unassigned.map(name => {
+      const courseCount = DATA.courses.filter(c => c.coach === name).length;
+      return `<div class="ct-item">
+        <div><span class="ct-name">${esc(name)}</span><span class="ct-courses"> ${courseCount}门课</span></div>
+        <select onchange="setCoachCategory('${esc(name)}',this.value)">
+          <option value="" selected>选择分类</option>
+          <option value="fulltime">全职</option>
+          <option value="0571">0571</option>
+          <option value="parttime">兼职</option>
+        </select>
+      </div>`;
+    }).join('');
+  } else {
+    up.style.display = 'none';
+  }
+}
+
+function setCoachCategory(name, cat) {
+  if (cat) COACH_CAT[name] = cat;
+  else delete COACH_CAT[name];
+  saveRules();
+  renderCoachCategories();
+}
+
+function autoAssignCoaches() {
+  const coaches = [...new Set(DATA.courses.map(c => c.coach))];
+  if (!coaches.length) { toast('请先导入数据'); return; }
+  // 教练课时费计算方式.xlsx 中的分类名单
+  const PRESET = {
+    fulltime: ['吴孟庆','张轩','徐敏','李宗翰','柳深耀','王诗画'],
+    '0571': ['张毅','赵克研','邱毅俊','钱威','陈瑜','黄琦涛','齐志远'],
+    parttime: ['万峻宇','冯豪','劳佳聪','卓姚诚','安乐翔','张吉牛','张良宇','沈佳康','洪佳妮','肖浩南','裘冬冬','郭致广','金子裕']
+  };
+  let assigned = 0;
+  coaches.forEach(name => {
+    if (COACH_CAT[name]) return; // 已有分类跳过
+    for (const [cat, list] of Object.entries(PRESET)) {
+      if (list.includes(name)) { COACH_CAT[name] = cat; assigned++; break; }
+    }
+  });
+  saveRules();
+  renderCoachCategories();
+  toast(assigned > 0 ? `已自动分配 ${assigned} 位教练` : '所有教练已分类');
+}
+
+// ===== Rules Page =====
+function renderCoachList() {
+  const coaches = [...new Set(DATA.courses.map(c => c.coach))].sort((a,b) => a.localeCompare(b,'zh'));
+  const list = document.getElementById('coachList');
+  if (!coaches.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--g400);font-size:12px">请先导入数据</div>';
+    return;
+  }
+  list.innerHTML = coaches.map(name => {
+    const rules = RULES.coaches[name];
+    const cnt = rules ? (rules.rules||[]).length : 0;
+    const courseCount = DATA.courses.filter(c => c.coach === name).length;
+    return `<div class="sb-item ${name===selectedCoach?'active':''}" onclick="selectCoach('${esc(name)}')">
+      <div><div class="name">${esc(name)}</div><div class="meta">${courseCount}门课</div></div>
+      ${cnt ? '<span class="cnt">'+cnt+'规则</span>' : ''}
+    </div>`;
+  }).join('');
+}
+
+function filterCoaches(q) {
+  document.querySelectorAll('.sb-item').forEach(el => {
+    el.style.display = el.querySelector('.name').textContent.includes(q) ? '' : 'none';
+  });
+}
+
+function selectCoach(name) {
+  selectedCoach = name;
+  renderCoachList();
+  document.getElementById('ruleEmpty').style.display = 'none';
+  document.getElementById('ruleContent').style.display = 'block';
+  document.getElementById('rpCoachName').textContent = name;
+  const coachCourses = [...new Set(DATA.courses.filter(c => c.coach === name).map(c => c.course))];
+  document.getElementById('rpCoachMeta').textContent = '共 ' + coachCourses.length + ' 门课程，已配置 ' + (getCoachRules(selectedCoach).rules||[]).length + ' 条规则';
+  renderRules();
+}
+
+function getCoachRules(name) {
+  if (!RULES.coaches) RULES.coaches = {};
+  if (!RULES.coaches[name]) RULES.coaches[name] = { rules: [], subsidies: [] };
+  if (!Array.isArray(RULES.coaches[name].subsidies)) RULES.coaches[name].subsidies = [];
+  return RULES.coaches[name];
+}
+
+function renderRules() {
+  const cr = getCoachRules(selectedCoach);
+  // Get all courses for this coach
+  const coachCourses = DATA.courses.filter(c => c.coach === selectedCoach).map(c => c.course);
+  const uniqueCourses = [...new Set(coachCourses)];
+
+  const tbody = document.getElementById('ruleRows');
+  document.getElementById('noRulesHint').style.display = cr.rules.length ? 'none' : 'block';
+  tbody.innerHTML = cr.rules.map((r, i) => `<tr>
+    <td><select onchange="updRule(${i},'course',this.value)" style="min-width:160px">
+      <option value="">-- 选择课程 --</option>
+      ${uniqueCourses.map(c => `<option value="${esc(c)}" ${r.course===c?'selected':''}>${esc(c.length>20?c.slice(0,20)+'…':c)}</option>`).join('')}
+    </select></td>
+    <td><select onchange="updRule(${i},'method',this.value)">
+      ${Object.entries(METHOD_LABELS).map(([k,v]) => `<option value="${k}" ${r.method===k?'selected':''}>${v}</option>`).join('')}
+    </select></td>
+    <td>${renderRuleRate(r, i)}</td>
+    <td><button class="btn btn-err btn-s" onclick="delRule(${i})"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
+  </tr>`).join('');
+
+  // Show courses without rules
+  const ruledCourses = new Set(cr.rules.map(r => r.course));
+  const unruled = uniqueCourses.filter(c => !ruledCourses.has(c));
+  if (unruled.length && cr.rules.length) {
+    tbody.innerHTML += `<tr><td colspan="4" style="padding:8px 10px;font-size:11px;color:var(--g400);background:var(--g50)">
+      以下课程未配置规则（将使用默认规则 确收×25%）：${unruled.map(c => esc(c.length>16?c.slice(0,16)+'…':c)).join('、')}
+    </td></tr>`;
+  }
+
+  // Per-coach transport subsidy
+  const subs = cr.subsidies || [];
+  const transSubs = subs.filter(s => 'school' in s);
+  const subItems = subs.filter(s => 'course' in s);
+  const transTbody = document.getElementById('coachTransRows');
+  document.getElementById('noTransHint').style.display = transSubs.length ? 'none' : 'block';
+  transTbody.innerHTML = transSubs.map((t, i) => `<tr>
+    <td><select onchange="updCoachTrans(${i},'school',this.value)" style="min-width:260px">
+      <option value="">-- 选择学校 --</option>
+      ${getSchoolOptions(t.school)}
+    </select></td>
+    <td><div class="rate-cell"><span>¥</span><input type="number" value="${t.rate||50}" onchange="updCoachTrans(${i},'rate',Number(this.value))"><span>/天</span></div></td>
+    <td><button class="btn btn-err btn-s" onclick="delCoachTrans(${i})"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
+  </tr>`).join('');
+  // Per-coach course subsidy (duration-based)
+  const subContainer = document.getElementById('coachSubRows');
+  document.getElementById('noSubHint').style.display = subItems.length ? 'none' : 'block';
+  subContainer.innerHTML = subItems.map((s, i) => {
+    const durRows = (s.durations || []).map((d, di) => `<tr>
+      <td style="padding-left:24px;color:var(--g500);font-size:12px">${d.minutes} 分钟课</td>
+      <td style="font-size:11px;color:var(--g400)">${d.count || 0} 次</td>
+      <td><div class="rate-cell"><span>¥</span><input type="number" value="${d.rate||0}" onchange="updCoachSubDur(${i},${di},this.value)"><span>/节</span></div></td>
+    </tr>`).join('');
+    return `<div style="border:1px solid var(--g200);border-radius:var(--rx);margin-bottom:8px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--g50)">
+        <select onchange="onCourseSubSelect(${i},this.value)" style="flex:1;min-width:200px;border:1px solid var(--g200);border-radius:var(--rx);padding:4px 8px;font-size:12px;font-family:inherit">
+          <option value="">-- 选择课程 --</option>
+          ${uniqueCourses.map(c => `<option value="${esc(c)}" ${s.course===c?'selected':''}>${esc(c.length>24?c.slice(0,24)+'…':c)}</option>`).join('')}
+        </select>
+        <button class="btn btn-err btn-s" onclick="delCoachSub(${i})"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      ${s.durations && s.durations.length ? `<table class="rule-tbl" style="margin:0"><thead><tr>
+        <th style="padding-left:24px">时长</th><th>课次</th><th>补贴单价（元/节）</th>
+      </tr></thead><tbody>${durRows}</tbody></table>` : `<div style="padding:12px 16px;font-size:11px;color:var(--g400)">${s.course ? '该课程无签到时长数据' : '请选择课程以自动识别时长分档'}</div>`}
+    </div>`;
+  }).join('');
+}
+
+function renderRuleRate(r, i) {
+  if (r.method === 'revenue_pct') return `<div class="rate-cell"><input type="number" value="${(r.rate||0.25)*100}" onchange="updRule(${i},'rate',this.value/100)"><span>%</span></div>`;
+  if (r.method === 'lessons_unit') return `<div class="rate-cell"><span>¥</span><input type="number" value="${r.rate||150}" onchange="updRule(${i},'rate',this.value)"><span>/节</span></div>`;
+  if (r.method === 'lessons_base_pct') return `<div class="rate-cell"><span>课次×</span><input type="number" value="${r.unit||300}" onchange="updRule(${i},'unit',this.value)" style="width:55px"><span>×</span><input type="number" value="${(r.rate||0.35)*100}" onchange="updRule(${i},'rate',this.value/100)" style="width:55px"><span>%</span></div>`;
+  if (r.method === 'min_two') return `<div style="display:flex;align-items:center;gap:4px;flex-wrap:nowrap"><div class="rate-cell"><span>确收×</span><input type="number" value="${(r.rate||0.2)*100}" onchange="updRule(${i},'rate',this.value/100)" style="width:55px"><span>%</span></div><span style="color:var(--g400);font-size:11px;flex-shrink:0">取小</span><div class="rate-cell"><span>课次×</span><input type="number" value="${r.unit||150}" onchange="updRule(${i},'unit',this.value)" style="width:55px"><span>/节</span></div></div>`;
+  if (r.method === 'fixed') return `<div class="rate-cell"><span>¥</span><input type="number" value="${r.rate||0}" onchange="updRule(${i},'rate',this.value)"></div>`;
+  if (r.method === 'skip') return '<span style="font-size:12px;color:var(--g400)">—</span>';
+  return '';
+}
+
+function addRuleRow() {
+  const cr = getCoachRules(selectedCoach);
+  // Find a course not yet ruled
+  const coachCourses = [...new Set(DATA.courses.filter(c => c.coach === selectedCoach).map(c => c.course))];
+  const ruled = new Set(cr.rules.map(r => r.course));
+  const unruly = coachCourses.find(c => !ruled.has(c));
+  cr.rules.push({ course: unruly || '', method: 'revenue_pct', rate: 0.25 });
+  saveRules(); renderRules();
+}
+function delRule(i) { getCoachRules(selectedCoach).rules.splice(i, 1); saveRules(); renderRules(); }
+function updRule(i, key, val) { const r = getCoachRules(selectedCoach).rules[i]; r[key] = key === 'rate' || key === 'unit' ? Number(val) : val; saveRules(); renderRules(); }
+
+function addCoachTransRow() {
+  if (!selectedCoach) { toast('请先选择教练'); return; }
+  const cr = getCoachRules(selectedCoach);
+  if (!Array.isArray(cr.subsidies)) cr.subsidies = [];
+  cr.subsidies.push({ school: '', rate: 50 });
+  saveRules(); renderRules();
+  toast('已添加交通补贴');
+}
+function delCoachTrans(i) {
+  if (!selectedCoach) return;
+  const cr = getCoachRules(selectedCoach);
+  const transItems = (cr.subsidies||[]).filter(s => 'school' in s);
+  if (i >= 0 && i < transItems.length) {
+    const realIdx = cr.subsidies.indexOf(transItems[i]);
+    if (realIdx >= 0) cr.subsidies.splice(realIdx, 1);
+  }
+  saveRules(); renderRules();
+}
+function updCoachTrans(i, key, val) {
+  if (!selectedCoach) return;
+  const cr = getCoachRules(selectedCoach);
+  const transItems = (cr.subsidies||[]).filter(s => 'school' in s);
+  if (i >= 0 && i < transItems.length) {
+    const realIdx = cr.subsidies.indexOf(transItems[i]);
+    if (realIdx >= 0) cr.subsidies[realIdx][key] = val;
+  }
+  saveRules();
+}
+
+function addCoachSubRow() {
+  if (!selectedCoach) { toast('请先选择教练'); return; }
+  const cr = getCoachRules(selectedCoach);
+  if (!Array.isArray(cr.subsidies)) cr.subsidies = [];
+  cr.subsidies.push({ course: '', durations: [] });
+  saveRules(); renderRules();
+  toast('已添加课时补贴');
+}
+function delCoachSub(i) {
+  if (!selectedCoach) return;
+  const cr = getCoachRules(selectedCoach);
+  const subItems = (cr.subsidies||[]).filter(s => 'course' in s);
+  if (i >= 0 && i < subItems.length) {
+    const realIdx = cr.subsidies.indexOf(subItems[i]);
+    if (realIdx >= 0) cr.subsidies.splice(realIdx, 1);
+  }
+  saveRules(); renderRules();
+}
+function onCourseSubSelect(i, course) {
+  if (!selectedCoach) return;
+  const cr = getCoachRules(selectedCoach);
+  const subItems = (cr.subsidies||[]).filter(s => 'course' in s);
+  if (i < 0 || i >= subItems.length) return;
+  const realIdx = cr.subsidies.indexOf(subItems[i]);
+  if (realIdx < 0) return;
+
+  const item = cr.subsidies[realIdx];
+  const oldRates = {};
+  (item.durations || []).forEach(d => { oldRates[d.minutes] = d.rate; });
+  item.course = course;
+
+  if (course) {
+    const attKey = selectedCoach + '|' + course;
+    const att = DATA.attendance[attKey];
+    const durMap = att && att.durationMap ? att.durationMap : {};
+    item.durations = Object.keys(durMap).map(Number).sort((a, b) => a - b).map(m => ({
+      minutes: m, count: durMap[m], rate: oldRates[m] || 0
+    }));
+  } else {
+    item.durations = [];
+  }
+  saveRules(); renderRules();
+}
+function updCoachSubDur(i, durIdx, val) {
+  if (!selectedCoach) return;
+  const cr = getCoachRules(selectedCoach);
+  const subItems = (cr.subsidies||[]).filter(s => 'course' in s);
+  if (i < 0 || i >= subItems.length) return;
+  const realIdx = cr.subsidies.indexOf(subItems[i]);
+  if (realIdx >= 0 && cr.subsidies[realIdx].durations[durIdx]) {
+    cr.subsidies[realIdx].durations[durIdx].rate = Number(val);
+  }
+  saveRules();
+}
+
+// ===== Global Subsidy Config =====
+function getSchoolOptions(selected) {
+  const schools = [...new Set(DATA.courses.map(c => c.school).filter(Boolean))].sort((a,b) => a.localeCompare(b,'zh'));
+  return schools.map(s => `<option value="${esc(s)}" ${s===selected?'selected':''}>${esc(s)}</option>`).join('');
+}
+
+// ===== Calculation =====
+function startCalc() {
+  const hasRules = Object.keys(RULES.coaches).some(k => (RULES.coaches[k].rules || []).length > 0);
+  if (!hasRules && !Object.keys(RULES.coaches).length) {
+    toast('暂无规则，请先在「规则配置」中配置或导入规则');
+    return;
+  }
+  calcFromRules();
+}
+
+function calcFromRules() {
+  if (!DATA.courses.length) { toast('请先导入数据'); return; }
+  CALC = [];
+
+  // 1. Calculate course fees
+  DATA.courses.forEach(c => {
+    const cr = RULES.coaches[c.coach];
+    let rule = null;
+    let isSpecial = false;
+    if (cr) rule = cr.rules.find(r => r.course === c.course) || null;
+    if (!rule) { rule = RULES.defaultRule; isSpecial = true; }
+
+    let amount = 0;
+    const rev = c.revenue, les = c.lessons;
+    switch(rule.method) {
+      case 'revenue_pct': amount = r2(rev * (rule.rate || 0.25)); break;
+      case 'lessons_unit': amount = r2(les * (rule.rate || 150)); break;
+      case 'lessons_base_pct': amount = r2(les * (rule.unit || 300) * (rule.rate || 0.35)); break;
+      case 'min_two': amount = r2(Math.min(rev * (rule.rate || 0.2), les * (rule.unit || 150))); break;
+      case 'fixed': amount = rule.rate || 0; break;
+      case 'skip': amount = 0; break;
+      default: amount = r2(rev * 0.25);
+    }
+
+    CALC.push({
+      ...c,
+      matchedRule: rule.course ? `${trunc(c.course,12)}: ${METHOD_LABELS[rule.method] || rule.method}` : '默认规则',
+      formula: getCalcFormula(c, rule),
+      amount,
+      ruleMethod: rule.method,
+      ruleRate: rule.rate,
+      ruleUnit: rule.unit,
+      isSpecial,
+    });
+  });
+
+  // 2. Calculate subsidies (per-coach)
+  const subsidyResults = [];
+  Object.entries(RULES.coaches).forEach(([coach, cr]) => {
+    if (!cr.subsidies || !cr.subsidies.length) return;
+    // Transport subsidy (school-based, per day)
+    cr.subsidies.filter(s => s.school && s.rate).forEach(sub => {
+      const days = new Set();
+      DATA.courses.forEach(c => {
+        if (c.coach !== coach || c.school !== sub.school) return;
+        const attKey = c.coach + '|' + c.course;
+        const att = DATA.attendance[attKey];
+        if (att && att.dateList) att.dateList.forEach(d => days.add(d));
+      });
+      if (days.size === 0) return;
+      subsidyResults.push({
+        coach, name: '交通补贴',
+        desc: `${trunc(sub.school, 12)} ${days.size}天×¥${sub.rate}`,
+        count: days.size, unit: sub.rate,
+        amount: r2(days.size * sub.rate),
+        type: 'transport'
+      });
+    });
+    // Course subsidy (duration-based, per lesson)
+    cr.subsidies.filter(s => s.course && s.durations && s.durations.length).forEach(sub => {
+      const attKey = coach + '|' + sub.course;
+      const att = DATA.attendance[attKey];
+      if (!att || !att.durationMap) return;
+      sub.durations.forEach(d => {
+        if (!d.rate || !d.minutes) return;
+        const count = att.durationMap[d.minutes] || 0;
+        if (!count) return;
+        subsidyResults.push({
+          coach, name: '课时补贴',
+          desc: `${trunc(sub.course, 12)} ${d.minutes}分钟×${count}节×¥${d.rate}`,
+          count, unit: d.rate,
+          amount: r2(count * d.rate),
+          type: 'course'
+        });
+      });
+    });
+  });
+
+  SUBSIDY_CALC = subsidyResults;
+  switchPage('calc', document.querySelectorAll('.nav-tab')[3]);
+  renderCalc(subsidyResults);
+  toast('计算完成');
+}
+
+function getCalcFormula(c, rule) {
+  const rev = fn(c.revenue), les = c.lessons;
+  switch(rule.method) {
+    case 'revenue_pct': return `¥${rev} × ${((rule.rate||0.25)*100).toFixed(0)}%`;
+    case 'lessons_unit': return `${les}节 × ¥${rule.rate||150}`;
+    case 'lessons_base_pct': return `${les}节 × ¥${rule.unit||300} × ${((rule.rate||0.35)*100).toFixed(0)}%`;
+    case 'min_two': return `min(¥${rev}×${((rule.rate||0.2)*100).toFixed(0)}%, ${les}节×¥${rule.unit||150})`;
+    case 'fixed': return `固定 ¥${fn(rule.rate||0)}`;
+    case 'skip': return '合作项目';
+    default: return `¥${rev} × 25%`;
+  }
+}
+
+let lastSubsidyResults = [];
+
+function renderCalc(subsidyResults) {
+  lastSubsidyResults = subsidyResults || [];
+  if (!CALC.length) {
+    document.getElementById('calcBody').innerHTML = '<tr><td colspan="10"><div style="text-align:center;padding:40px;color:var(--g400);font-size:13px">暂无计算结果，请先在「规则配置」页面点击「运行计算」</div></td></tr>';
+    return;
+  }
+
+  // Populate filter dropdowns
+  const coaches = [...new Set(CALC.map(c => c.coach))].sort((a,b) => a.localeCompare(b,'zh'));
+  const depts = [...new Set(CALC.map(c => c.dept))].sort();
+  const types = [...new Set(CALC.map(c => c.type).filter(Boolean))].sort();
+  fillSelect('fltCoach', coaches, '全部教练');
+  fillSelect('fltDept', depts, '全部部门');
+  fillSelect('fltType', types, '全部类型');
+  fillSelect('exportDept', depts, '全部部门');
+
+  applyCalcFilter();
+}
+
+function fillSelect(id, items, placeholder) {
+  const sel = document.getElementById(id);
+  const val = sel.value;
+  sel.innerHTML = `<option value="">${placeholder}</option>` + items.map(i => `<option value="${esc(i)}">${esc(i.length>16?i.slice(0,16)+'…':i)}</option>`).join('');
+  if (items.includes(val)) sel.value = val;
+}
+
+function applyCalcFilter() {
+  if (!CALC.length) return;
+  const fCoach = document.getElementById('fltCoach').value;
+  const fDept = document.getElementById('fltDept').value;
+  const fType = document.getElementById('fltType').value;
+  const fCat = document.getElementById('fltCat').value;
+
+  let filtered = CALC.filter(c => {
+    if (fCoach && c.coach !== fCoach) return false;
+    if (fDept && c.dept !== fDept) return false;
+    if (fType && c.type !== fType) return false;
+    if (fCat && (COACH_CAT[c.coach] || '') !== fCat) return false;
+    return true;
+  });
+
+  // Filter subsidies to match
+  let filteredSub = lastSubsidyResults.filter(s => {
+    if (fCoach && s.coach !== fCoach) return false;
+    if (fCat && (COACH_CAT[s.coach] || '') !== fCat) return false;
+    return true;
+  });
+
+  // Stats
+  const coachSet = new Set(filtered.map(c => c.coach));
+  const totalRev = filtered.reduce((s,c) => s + c.revenue, 0);
+  const totalAmt = filtered.reduce((s,c) => s + c.amount, 0);
+  const totalSub = filteredSub.reduce((s,x) => s + x.amount, 0);
+  document.getElementById('c_courses').innerHTML = filtered.length + '<span class="u">门</span>';
+  document.getElementById('c_coaches').innerHTML = coachSet.size + '<span class="u">人</span>';
+  document.getElementById('c_rev').textContent = '¥' + fn(totalRev);
+  document.getElementById('c_total').textContent = '¥' + fn(totalAmt + totalSub);
+
+  // Table — special cases at bottom
+  const sortedCalc = [...filtered].sort((a, b) => (a.isSpecial ? 1 : 0) - (b.isSpecial ? 1 : 0));
+  document.getElementById('calcCnt').textContent = filtered.length + ' 条';
+  document.getElementById('calcBody').innerHTML = sortedCalc.length ? sortedCalc.map((c, i) => `<tr${c.isSpecial?' style="background:var(--warn-bg)"':''}>
+    <td style="color:var(--g400);font-size:11px">${i+1}</td>
+    <td>${esc(c.dept.replace('教培',''))}</td>
+    <td style="font-size:11px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.school)}">${esc(c.school)}</td>
+    <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.course)}">${esc(trunc(c.course,15))}${c.isSpecial?' <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:var(--warn);color:#fff">特殊情况</span>':''}</td>
+    <td>${c.type ? '<span class="type-tag type-'+c.type+'">'+c.type+'</span>' : '—'}</td>
+    <td style="font-weight:600">${esc(c.coach)}</td>
+    <td>${c.lessons}</td><td>¥${fn(c.revenue)}</td>
+    <td style="font-size:11px;font-family:'SF Mono','Fira Code',monospace;color:var(--pri)">${esc(c.formula)}</td>
+    <td style="font-weight:700;color:var(--pri);font-variant-numeric:tabular-nums">¥${fn(c.amount)}</td>
+  </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--g400)">无匹配数据</td></tr>';
+
+  // Coach summary
+  const cm = {};
+  filtered.forEach(c => { if (!cm[c.coach]) cm[c.coach] = { a: 0, c: 0, cat: COACH_CAT[c.coach] || '' }; cm[c.coach].a += c.amount; cm[c.coach].c++; });
+  filteredSub.forEach(s => { if (cm[s.coach]) cm[s.coach].a += s.amount; });
+  const sorted = Object.entries(cm).sort((a,b) => b[1].a - a[1].a);
+  const catColors = { fulltime: 'var(--pri)', '0571': 'var(--ok)', parttime: 'var(--warn)' };
+  document.getElementById('calcCoachSum').innerHTML = sorted.length ? sorted.map(([n,d]) => {
+    const catLabel = d.cat ? `<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:${catColors[d.cat]||'var(--g300)'};color:#fff;margin-left:4px">${CAT_LABELS[d.cat]||d.cat}</span>` : '';
+    return `<tr><td class="sn">${esc(n)}${catLabel}</td><td class="sm">${d.c}门课</td><td class="sa">¥${fn(d.a)}</td></tr>`;
+  }).join('') : '<tr><td style="text-align:center;color:var(--g400);padding:16px;font-size:12px">无数据</td></tr>';
+
+  // Dept summary
+  const dm = {};
+  filtered.forEach(c => { dm[c.dept] = (dm[c.dept]||0) + c.amount; });
+  const maxD = Math.max(...Object.values(dm), 1);
+  document.getElementById('calcDeptSum').innerHTML = Object.keys(dm).length ? Object.entries(dm).map(([n,a]) =>
+    `<div class="di"><span class="di-n">${esc(n.replace('教培',''))}</span><div class="di-bar"><div class="di-fill" style="width:${(a/maxD*100).toFixed(0)}%"></div></div><span class="di-a">¥${fn(a)}</span></div>`
+  ).join('') : '<div style="text-align:center;color:var(--g400);padding:16px;font-size:12px">无数据</div>';
+
+  // Subsidy summary
+  document.getElementById('calcSubsidySum').innerHTML = filteredSub.length
+    ? filteredSub.map(s => `<tr><td class="sn">${esc(s.coach)}</td><td style="font-size:11px;color:var(--g500)">${esc(s.name)} (${esc(s.desc)})</td><td class="sa">¥${fn(s.amount)}</td></tr>`).join('')
+    : '<tr><td style="text-align:center;color:var(--g400);padding:20px;font-size:12px">暂无补助数据</td></tr>';
+}
+
+function resetCalcFilter() {
+  document.getElementById('fltCoach').value = '';
+  document.getElementById('fltDept').value = '';
+  document.getElementById('fltType').value = '';
+  document.getElementById('fltCat').value = '';
+  applyCalcFilter();
+}
+
+function exportCalcCSV() {
+  if (!CALC.length) { toast('暂无数据'); return; }
+  const fDept = document.getElementById('exportDept').value;
+  const baseData = fDept ? CALC.filter(c => c.dept === fDept) : CALC;
+  if (!baseData.length) { toast('该部门无数据'); return; }
+  const subAll = fDept ? (SUBSIDY_CALC || []).filter(s => {
+    const coach = CALC.find(c => c.coach === s.coach);
+    return coach && coach.dept === fDept;
+  }) : (SUBSIDY_CALC || []);
+  const h = ['部门','学校','课程名称','课程类型','教练','课次','确收金额','计算公式','课时费'];
+  const wb = XLSX.utils.book_new();
+  const categories = [
+    { key: 'fulltime', label: '全职教练' },
+    { key: '0571', label: '0571教练' },
+    { key: 'parttime', label: '兼职教练' }
+  ];
+  function buildSheetData(catKey) {
+    const courseRows = baseData.filter(c => (COACH_CAT[c.coach] || '') === catKey).sort((a, b) => (a.isSpecial ? 1 : 0) - (b.isSpecial ? 1 : 0));
+    const subRows = subAll.filter(s => (COACH_CAT[s.coach] || '') === catKey);
+    if (!courseRows.length && !subRows.length) return null;
+    const courseData = courseRows.map(c => [c.dept, c.school, c.course + (c.isSpecial ? ' [特殊情况]' : ''), c.type, c.coach, c.lessons, c.revenue, c.formula, c.amount]);
+    const subData = subRows.map(s => ['', '', '【' + s.name + '】' + s.desc, '', s.coach, '', '', '', s.amount]);
+    return [h, ...courseData, ...subData];
+  }
+  categories.forEach(cat => {
+    const data = buildSheetData(cat.key);
+    if (!data) return;
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, cat.label);
+  });
+  // "未分类" sheet
+  const uncCourse = baseData.filter(c => !COACH_CAT[c.coach]).sort((a, b) => (a.isSpecial ? 1 : 0) - (b.isSpecial ? 1 : 0));
+  const uncSub = subAll.filter(s => !COACH_CAT[s.coach]);
+  if (uncCourse.length || uncSub.length) {
+    const courseData = uncCourse.map(c => [c.dept, c.school, c.course + (c.isSpecial ? ' [特殊情况]' : ''), c.type, c.coach, c.lessons, c.revenue, c.formula, c.amount]);
+    const subData = uncSub.map(s => ['', '', '【' + s.name + '】' + s.desc, '', s.coach, '', '', '', s.amount]);
+    const data = [h, ...courseData, ...subData];
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, '未分类');
+  }
+  const deptLabel = fDept ? '_' + fDept.replace('教培','') : '';
+  XLSX.writeFile(wb, `课时费计算结果${deptLabel}.xlsx`);
+  toast(`已导出 XLSX${fDept ? '（'+fDept+'）' : '（全部）'}`);
+}
+
+// ===== Rules Import/Export =====
+function exportRules() {
+  const data = { rules: RULES, subsidies: SUBSIDIES, coachCat: COACH_CAT };
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = '课时费规则.json'; a.click();
+  toast('规则已导出');
+}
+
+function importRules(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (data.rules) { RULES = data.rules; SUBSIDIES = data.subsidies || SUBSIDIES; COACH_CAT = data.coachCat || COACH_CAT; }
+      else { RULES = data; } // legacy format
+      if (!RULES.coaches) RULES.coaches = {};
+      if (!RULES.defaultRule) RULES.defaultRule = { method: 'revenue_pct', rate: 0.25 };
+      saveRules();
+      renderCoachList();
+      toast('规则已导入: ' + Object.keys(RULES.coaches).length + ' 位教练');
+    } catch(err) { toast('导入失败: ' + err.message); }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+// ===== Utils =====
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function trunc(s, n) { return (s||'').length > n ? s.slice(0,n) + '…' : s; }
+function fn(n) { return (n||0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function r2(n) { return Math.round(n * 100) / 100; }
+function toast(msg) {
+  const t = document.getElementById('toast');
+  document.getElementById('toastMsg').textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+function download(name, content) {
+  const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+}
+</script>
+</body>
+</html>

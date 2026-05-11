@@ -11,7 +11,7 @@ export const useAIChatStore = defineStore('aiChat', {
   state: (): AIChatState => ({
     messages: [],
     isTyping: false,
-    quickActions: []
+    quickActions: ['🔍 搜索知识库', '📝 撰写政策', '📊 生成报告'],
   }),
 
   actions: {

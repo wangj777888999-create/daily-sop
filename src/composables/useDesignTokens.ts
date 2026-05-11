@@ -1,5 +1,3 @@
-import { computed } from 'vue'
-
 // 设计令牌 hook - 提供设计系统中定义的所有颜色、字体、间距等令牌
 export function useDesignTokens() {
   const colors = {

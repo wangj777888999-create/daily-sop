@@ -6,7 +6,6 @@ import Chip from '@/ui/components/common/Chip.vue'
 import RowTitle from '@/ui/components/common/RowTitle.vue'
 import DataTable from '@/ui/components/common/DataTable.vue'
 import SearchBox from '@/ui/components/common/SearchBox.vue'
-import WBox from '@/ui/components/common/WBox.vue'
 
 const viewMode = ref<'editor' | 'visual'>('editor')
 const expandedTable = ref('')

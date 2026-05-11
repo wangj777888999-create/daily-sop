@@ -1,15 +1,68 @@
 <script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
 import Card from '@/ui/components/common/Card.vue'
 import Button from '@/ui/components/common/Button.vue'
 import Chip from '@/ui/components/common/Chip.vue'
 import RowTitle from '@/ui/components/common/RowTitle.vue'
+import { useKnowledgeStore } from '@/stores/knowledge'
+import type { SearchResult } from '@/types/knowledge'
 
-const outline: Array<{
-  id: number
-  text: string
-  indent?: number
-  active: boolean
-}> = []
+const kbStore = useKnowledgeStore()
+const kbSearchQuery = ref('')
+const selectedRefs = ref<SearchResult[]>([])
+const generatedContent = ref('')
+const editorContent = ref('')
+const generating = ref(false)
+
+onMounted(async () => {
+  await kbStore.loadDocuments()
+})
+
+const outline = computed(() => {
+  if (!generatedContent.value) return []
+  return generatedContent.value
+    .split('\n')
+    .filter(line => line.trim().startsWith('#') || line.trim().match(/^第[一二三四五六七八九十]/))
+    .map((line, i) => ({
+      id: i,
+      text: line.replace(/^#+\s*/, '').trim(),
+      indent: line.startsWith('##') ? 1 : 0,
+      active: i === 0,
+    }))
+})
+
+async function handleKBSearch() {
+  if (kbSearchQuery.value.trim()) {
+    await kbStore.search(kbSearchQuery.value.trim())
+  }
+}
+
+function addReference(result: SearchResult) {
+  if (!selectedRefs.value.find(r => r.doc_id === result.doc_id && r.heading_path === result.heading_path)) {
+    selectedRefs.value.push(result)
+  }
+}
+
+function removeReference(index: number) {
+  selectedRefs.value.splice(index, 1)
+}
+
+async function handleGenerate() {
+  if (!editorContent.value.trim()) return
+  generating.value = true
+  try {
+    const uniqueIds = [...new Set(selectedRefs.value.map(r => r.doc_id))]
+    const response = await kbStore.generateContent(editorContent.value, uniqueIds, 'policy')
+    generatedContent.value = response.generated_text
+  } catch (e) {
+    console.error('Generation failed:', e)
+  } finally {
+    generating.value = false
+  }
+}
+
+const wordCount = computed(() => generatedContent.value.length)
+const sectionCount = computed(() => outline.value.length)
 </script>
 
 <template>
@@ -31,6 +84,9 @@ const outline: Array<{
         >
           {{ item.text }}
         </div>
+        <div v-if="outline.length === 0" class="text-[11px] text-text-light px-2 py-4 text-center">
+          生成内容后将自动提取大纲
+        </div>
       </div>
       <div class="mt-auto pt-2.5 border-t border-border">
         <Button variant="secondary" style="width: 100%; justify-content: center; font-size: 11px">
@@ -48,12 +104,25 @@ const outline: Array<{
         <Chip v-for="t in ['列表', '引用']" :key="t" style="font-size: 10px">{{ t }}</Chip>
         <div class="w-px h-4 bg-border mx-0.5" />
         <Chip style="font-size: 10px">插图</Chip>
-        <Chip accent style="font-size: 10px">AI润色</Chip>
+        <Chip accent style="font-size: 10px" @click="handleGenerate">AI生成</Chip>
       </div>
 
-      <Card class="flex-1 rounded-t-none overflow-hidden">
-        <h2 class="text-[16px] font-bold text-text-heading mb-2.5">请选择文档章节</h2>
-        <p class="text-[11px] text-text-light">从左侧大纲选择要编辑的章节</p>
+      <Card class="flex-1 rounded-t-none overflow-hidden flex flex-col">
+        <textarea
+          v-if="!generatedContent"
+          v-model="editorContent"
+          placeholder="在此输入要生成的内容描述，例如：撰写一份校园安全管理政策，包含总则、安全管理职责、安全教育与培训、应急管理、附则等章节..."
+          class="flex-1 w-full text-[13px] text-text-body bg-transparent outline-none resize-none p-3 leading-relaxed"
+        />
+        <div v-else class="flex-1 overflow-y-auto p-3">
+          <div class="text-[13px] text-text-body leading-relaxed whitespace-pre-wrap">{{ generatedContent }}</div>
+        </div>
+        <div v-if="generating" class="px-3 pb-2 text-[11px] text-text-light">
+          AI 正在生成内容...
+        </div>
+        <div v-if="!generatedContent && !editorContent" class="flex-1 flex items-center justify-center">
+          <p class="text-[11px] text-text-light">输入生成描述后点击 AI生成 按钮</p>
+        </div>
       </Card>
     </div>
 
@@ -61,13 +130,21 @@ const outline: Array<{
       <Card>
         <RowTitle label="文档信息" />
         <div class="space-y-1.5 text-[11px]">
-          <div
-            v-for="[key, val] in [['字数', '0'], ['章节数', '0'], ['状态', '-'], ['上次保存', '-']]"
-            :key="key"
-            class="flex justify-between py-1 border-b border-border last:border-b-0"
-          >
-            <span class="text-text-light">{{ key }}</span>
-            <span class="text-text-body">{{ val }}</span>
+          <div class="flex justify-between py-1 border-b border-border last:border-b-0">
+            <span class="text-text-light">字数</span>
+            <span class="text-text-body">{{ wordCount }}</span>
+          </div>
+          <div class="flex justify-between py-1 border-b border-border last:border-b-0">
+            <span class="text-text-light">章节数</span>
+            <span class="text-text-body">{{ sectionCount }}</span>
+          </div>
+          <div class="flex justify-between py-1 border-b border-border last:border-b-0">
+            <span class="text-text-light">参考文档</span>
+            <span class="text-text-body">{{ selectedRefs.length }}</span>
+          </div>
+          <div class="flex justify-between py-1 border-b border-border last:border-b-0">
+            <span class="text-text-light">状态</span>
+            <span class="text-text-body">{{ generatedContent ? '已生成' : '编辑中' }}</span>
           </div>
         </div>
       </Card>
@@ -75,17 +152,64 @@ const outline: Array<{
       <Card>
         <RowTitle label="导出" />
         <div class="space-y-1.5">
-          <Button v-for="t in ['导出 Word (.docx)', '导出 PDF', '复制全文 Markdown']" :key="t"
-            variant="secondary"
-            style="width: 100%; justify-content: center; font-size: 11px"
-          >
-            {{ t }}
-          </Button>
+          <Button variant="secondary" style="width: 100%; justify-content: center; font-size: 11px">导出 Word (.docx)</Button>
+          <Button variant="secondary" style="width: 100%; justify-content: center; font-size: 11px">导出 PDF</Button>
+          <Button variant="secondary" style="width: 100%; justify-content: center; font-size: 11px">复制全文 Markdown</Button>
         </div>
       </Card>
 
-      <Card class="flex-1">
+      <Card class="flex-1 flex flex-col">
         <RowTitle label="参考资料" />
+        <div class="flex items-center gap-1 mb-2">
+          <input
+            v-model="kbSearchQuery"
+            type="text"
+            placeholder="搜索知识库…"
+            class="flex-1 bg-page-bg border border-border rounded-md px-2 py-1 text-[11px] text-text-body outline-none"
+            @keyup.enter="handleKBSearch"
+          />
+          <Button variant="primary" size="small" @click="handleKBSearch">搜</Button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto space-y-1.5">
+          <div v-if="kbStore.searchResults.length > 0" class="text-[10px] text-text-light mb-1">
+            搜索结果：
+          </div>
+          <div
+            v-for="r in kbStore.searchResults.slice(0, 5)"
+            :key="r.doc_id + r.heading_path"
+            class="text-[10px] p-1.5 rounded bg-page-bg cursor-pointer hover:bg-accent-light"
+            @click="addReference(r)"
+          >
+            <div class="font-semibold text-text-heading truncate">{{ r.doc_name }}</div>
+            <div class="text-text-light truncate">{{ r.chunk_text.slice(0, 60) }}...</div>
+            <div class="text-accent text-[9px]">相关度 {{ (r.score * 100).toFixed(0) }}%</div>
+          </div>
+
+          <div v-if="selectedRefs.length > 0" class="mt-2">
+            <div class="text-[10px] text-text-light mb-1">已选参考（{{ selectedRefs.length }}）：</div>
+            <div v-for="(ref, i) in selectedRefs" :key="i" class="text-[10px] p-1 bg-accent-light rounded mb-1 flex justify-between items-start">
+              <div class="truncate flex-1">
+                <div class="font-semibold">{{ ref.doc_name }}</div>
+                <div class="text-text-light truncate">{{ ref.chunk_text.slice(0, 40) }}...</div>
+              </div>
+              <span class="cursor-pointer text-text-light ml-1 flex-shrink-0" @click="removeReference(i)">✕</span>
+            </div>
+            <Button
+              variant="primary"
+              size="small"
+              style="width: 100%; margin-top: 4px; font-size: 10px"
+              @click="handleGenerate"
+              :disabled="!editorContent.trim()"
+            >
+              {{ generating ? '生成中...' : '以选中文档为参考生成' }}
+            </Button>
+          </div>
+
+          <div v-if="!kbStore.searchQuery && selectedRefs.length === 0" class="text-[11px] text-text-light text-center py-4">
+            搜索知识库中的文档作为参考
+          </div>
+        </div>
       </Card>
     </div>
   </div>

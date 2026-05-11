@@ -7,7 +7,7 @@ const router = useRouter()
 
 const navItems = [
   { icon: '⌂', label: '工作台首页', key: 'home', path: '/home' },
-  { icon: '◈', label: 'SOP 数据分析', key: 'sop', path: '/sop' },
+  { icon: '◈', label: '工具箱', key: 'toolbox', path: '/toolbox' },
   { icon: '✦', label: '政策报告撰写', key: 'policy', path: '/policy' },
   { icon: '◉', label: '高级数据分析', key: 'analytics', path: '/analytics' },
   { icon: '⬡', label: '数据库连接', key: 'database', path: '/database' },

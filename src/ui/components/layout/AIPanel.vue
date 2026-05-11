@@ -1,32 +1,63 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useAIChatStore } from '@/stores/aiChat'
+import { useKnowledgeStore } from '@/stores/knowledge'
+import { generateContent } from '@/services/knowledgeApi'
 
 const chatStore = useAIChatStore()
+const kbStore = useKnowledgeStore()
 const inputText = ref('')
 
-const handleSend = () => {
+const handleSend = async () => {
   if (!inputText.value.trim()) return
 
   chatStore.addMessage({
     role: 'user',
     content: inputText.value
   })
+  const prompt = inputText.value
+  inputText.value = ''
 
   chatStore.setTyping(true)
-  setTimeout(() => {
-    chatStore.setTyping(false)
+  try {
+    const docIds = kbStore.selectedDocument ? [kbStore.selectedDocument.id] : undefined
+    const response = await generateContent({
+      prompt,
+      doc_ids: docIds,
+      style: 'general',
+      top_k: 3,
+    })
+
     chatStore.addMessage({
       role: 'ai',
-      content: '好的，我来帮你分析这个问题...'
+      content: response.generated_text,
+      sources: response.sources?.map(s => ({
+        doc_name: s.doc_name,
+        chunk_text: s.content || '',
+        heading_path: s.location || '',
+        score: 0,
+      })) || [],
     })
-  }, 1500)
-
-  inputText.value = ''
+  } catch {
+    chatStore.addMessage({
+      role: 'ai',
+      content: '抱歉，AI 生成失败。请确认已设置 ANTHROPIC_API_KEY 环境变量。',
+    })
+  } finally {
+    chatStore.setTyping(false)
+  }
 }
 
 const handleQuickAction = (action: string) => {
-  inputText.value = action
+  if (action === '🔍 搜索知识库') {
+    inputText.value = '在知识库中搜索：'
+  } else if (action === '📝 撰写政策') {
+    inputText.value = '请参考知识库中的政策文档，撰写一份关于'
+  } else if (action === '📊 生成报告') {
+    inputText.value = '请参考知识库中的报告模板，生成一份关于'
+  } else {
+    inputText.value = action
+  }
 }
 </script>
 
@@ -47,6 +78,12 @@ const handleQuickAction = (action: string) => {
           class="max-w-[92%] rounded-tr-lg rounded-br-lg rounded-bl-sm px-[10px] py-[7px] text-[11px] leading-relaxed bg-card-bg border border-border self-start"
         >
           {{ msg.content }}
+          <div v-if="msg.sources?.length" class="mt-2 pt-1.5 border-t border-border">
+            <div class="text-[9px] text-text-light mb-1">参考来源：</div>
+            <div v-for="(s, i) in msg.sources.slice(0, 3)" :key="i" class="text-[9px] text-text-light truncate">
+              · {{ s.doc_name }}
+            </div>
+          </div>
         </div>
         <div
           v-else

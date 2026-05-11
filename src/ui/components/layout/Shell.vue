@@ -7,9 +7,12 @@ import { computed } from 'vue'
 const route = useRoute()
 
 const pageTitle = computed(() => {
+  if (route.path.startsWith('/toolbox/')) {
+    return ['工作台', '工具箱', (route.meta.title as string) || '工具']
+  }
   const titles: Record<string, string[]> = {
     '/home': ['工作台', '首页'],
-    '/sop': ['工作台', 'SOP 分析'],
+    '/toolbox': ['工作台', '工具箱'],
     '/policy': ['工作台', '政策报告'],
     '/analytics': ['工作台', '高级数据分析'],
     '/database': ['工作台', '数据库连接'],

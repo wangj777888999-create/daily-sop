@@ -27,7 +27,7 @@ withDefaults(defineProps<Props>(), {
       :class="ri % 2 === 0 ? 'bg-card-bg' : 'bg-page-bg'"
     >
       <div
-        v-for="(col, ci) in columns"
+        v-for="(_col, ci) in columns"
         :key="ci"
         class="flex-1 px-2.5 py-1.5"
       >

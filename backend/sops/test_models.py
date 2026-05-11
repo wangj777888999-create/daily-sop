@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime
-from models import DataSource, Step, SOP
+from sops.models import DataSource, Step, SOP
 
 def test_data_source_model():
     ds = DataSource(
