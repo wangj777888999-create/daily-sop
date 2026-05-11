@@ -268,6 +268,12 @@ tbody tr{transition:var(--t)}tbody tr:hover{background:var(--g50)}
 
 <!-- ===== Page 1: Data Import ===== -->
 <div class="page active" id="page_import">
+  <!-- Platform import bar -->
+  <div style="margin-bottom:16px;background:#fff;border-radius:var(--rs);padding:14px 20px;box-shadow:var(--sh-xs);display:flex;align-items:center;gap:12px">
+    <span style="font-size:13px;color:var(--g600)">或从平台直接导入已有数据</span>
+    <button class="btn btn-o" onclick="importFromPlatform()" id="btnPlatformImport">↓ 从平台导入</button>
+    <span id="platformImportStatus" style="font-size:11px;color:var(--g400)"></span>
+  </div>
   <div class="up-grid">
     <div class="up-card" id="up1" onclick="document.getElementById('f1').click()">
       <span class="up-badge wait" id="b1">未上传</span>
@@ -1289,6 +1295,64 @@ function toast(msg) {
 function download(name, content) {
   const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+}
+// ===== Platform Artifact Import =====
+function injectArtifactData(artifact) {
+  if (!artifact || !artifact.data) return;
+  const { courses, attendance } = artifact.data;
+
+  // Inject courses
+  if (courses && courses.length) {
+    DATA.courses = courses.map(c => ({
+      dept: c.dept || '',
+      school: c.school || '',
+      course: c.course || '',
+      courseRaw: c.courseRaw || c.course || '',
+      coach: c.coach || '',
+      people: Number(c.people) || 0,
+      lessons: Number(c.lessons) || 0,
+      revenue: Number(c.revenue) || 0,
+      type: '',
+      attInfo: null,
+    }));
+  }
+
+  // Inject attendance
+  if (attendance && typeof attendance === 'object') {
+    DATA.attendance = {};
+    for (const [key, val] of Object.entries(attendance)) {
+      DATA.attendance[key] = {
+        total: val.total || 0,
+        '在岗': val['在岗'] || 0,
+        '迟到': val['迟到'] || 0,
+        '早退': val['早退'] || 0,
+        '旷工': val['旷工'] || 0,
+        dateList: val.dateList || [],
+        days: (val.dateList || []).length,
+        durationMap: val.durationMap || {},
+      };
+    }
+  }
+
+  mergeData();
+  markUploaded(1, artifact.name || '平台数据');
+  toast('已导入平台数据: ' + (artifact.name || ''));
+}
+
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'ARTIFACT_INJECT') {
+    injectArtifactData(e.data.artifact);
+  }
+});
+
+function importFromPlatform() {
+  // When embedded in iframe, ask parent to provide artifact data
+  if (window.parent !== window) {
+    window.parent.postMessage({ type: 'REQUEST_ARTIFACT' }, '*');
+    document.getElementById('platformImportStatus').textContent = '正在请求数据...';
+  } else {
+    document.getElementById('platformImportStatus').textContent = '请在平台工具箱中使用此功能';
+  }
 }
 </script>
 </body>

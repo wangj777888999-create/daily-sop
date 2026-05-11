@@ -2,22 +2,9 @@
 import { useRouter } from 'vue-router'
 import Card from '@/ui/components/common/Card.vue'
 import Chip from '@/ui/components/common/Chip.vue'
-import type { Tool } from '@/types/toolbox'
+import { tools } from '@/data/tools'
 
 const router = useRouter()
-
-const tools: Tool[] = [
-  {
-    id: 'fee-calculator',
-    name: '课时费计算器',
-    description: '上传 Excel 数据，按教练×课程规则计算课时费，支持多种计费方式和补贴配置',
-    icon: '◈',
-    color: '#5B8F7A',
-    tags: ['财务', 'Excel'],
-    src: '/tools/课时费计算器.html',
-    iframeHeight: 800,
-  },
-]
 
 const enabledTools = tools.filter(t => t.enabled !== false)
 const getIconBg = (color: string) => color + '15'

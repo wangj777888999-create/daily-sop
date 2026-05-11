@@ -22,7 +22,15 @@ const routes: RouteRecordRaw[] = [
     path: '/toolbox/:toolId',
     name: 'toolbox-detail',
     component: () => import('@/ui/pages/toolbox/ToolDetailPage.vue'),
-    meta: { title: '工具' }
+    meta: { title: '工具' },
+    children: [
+      {
+        path: 'monthly-analysis',
+        name: 'monthly-analysis-tool',
+        component: () => import('@/ui/pages/tools/MonthlyAnalysis.vue'),
+        meta: { title: '校内月度分析' }
+      }
+    ]
   },
   {
     path: '/policy',

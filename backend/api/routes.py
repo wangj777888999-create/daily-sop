@@ -14,6 +14,7 @@ from sops.code_parser import ParserCodeToSOP, parse_code_with_sources
 from sops.code_generator import SOPToExecutableCode
 from sops.sandbox import SandboxExecutor
 from sops.models import SOP, Step, ExecutionLog, DataSource
+import artifacts as artifact_store
 
 router = APIRouter()
 
@@ -437,3 +438,55 @@ async def get_file_info(file_id: str):
                 size=os.path.getsize(file_path)
             )
     raise HTTPException(status_code=404, detail="File not found")
+
+
+# ==================== Artifact 路由 ====================
+
+class ArtifactCreateRequest(BaseModel):
+    name: str
+    type: str
+    source_tool: str
+    data: dict
+    schema_version: str = "1"
+
+
+@router.post("/artifacts", response_model=dict)
+async def create_artifact(body: ArtifactCreateRequest):
+    """创建 artifact"""
+    artifact_id = f"art_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    now = datetime.now().isoformat()
+    artifact = {
+        "id": artifact_id,
+        "name": body.name,
+        "type": body.type,
+        "source_tool": body.source_tool,
+        "created_at": now,
+        "schema_version": body.schema_version,
+        "data": body.data,
+    }
+    artifact_store.save_artifact(artifact)
+    return artifact
+
+
+@router.get("/artifacts", response_model=List[dict])
+async def list_artifacts(type: Optional[str] = None):
+    """获取 artifact 列表，可按 type 筛选"""
+    return artifact_store.list_artifacts(type=type)
+
+
+@router.get("/artifacts/{artifact_id}", response_model=dict)
+async def get_artifact(artifact_id: str):
+    """获取单个 artifact 完整数据"""
+    artifact = artifact_store.get_artifact(artifact_id)
+    if not artifact:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    return artifact
+
+
+@router.delete("/artifacts/{artifact_id}")
+async def delete_artifact(artifact_id: str):
+    """删除 artifact"""
+    success = artifact_store.delete_artifact(artifact_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    return {"message": "Artifact deleted successfully"}
