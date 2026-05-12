@@ -1,7 +1,9 @@
 import os
 import uuid
 import logging
+import shutil
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from pydantic import BaseModel as PydanticBaseModel
 from fastapi.responses import FileResponse
 from typing import List, Optional
 from datetime import datetime
@@ -10,11 +12,10 @@ from knowledge.models import (KnowledgeDocument, ParsedDocument, SearchResult,
                                RAGRequest, RAGResponse, Folder, DocType)
 from knowledge.storage import (get_all_docs, get_doc, save_doc, delete_doc,
                                  get_all_folders, save_folder, delete_folder,
-                                 get_all_tags, ensure_dirs)
+                                 get_all_tags, ensure_dirs, save_chunks, delete_doc_chunks)
 from knowledge.parser import parse_document, compute_content_hash
 from knowledge.chunker import chunk_document
-from knowledge.embedder import get_embedding_service
-from knowledge.vector_store import VectorStore
+from knowledge.indexer import BM25Index
 from knowledge.rag import RAGPipeline
 
 router = APIRouter()
@@ -24,29 +25,20 @@ MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "data")
 KB_FILES_DIR = os.path.join(DATA_DIR, "knowledge_files")
-CHROMA_DIR = os.path.join(DATA_DIR, "chroma_db")
 os.makedirs(KB_FILES_DIR, exist_ok=True)
-os.makedirs(CHROMA_DIR, exist_ok=True)
 ensure_dirs()
 
-_vector_store: VectorStore = None
-_rag_pipeline: RAGPipeline = None
+
+def _get_bm25_index() -> BM25Index:
+    from main import app
+    index = getattr(app.state, "bm25_index", None)
+    if index is None:
+        raise HTTPException(status_code=503, detail="知识库索引未就绪，请稍后重试")
+    return index
 
 
-def get_vector_store() -> VectorStore:
-    global _vector_store
-    if _vector_store is None:
-        _vector_store = VectorStore(CHROMA_DIR)
-    return _vector_store
-
-
-def get_rag_pipeline() -> RAGPipeline:
-    global _rag_pipeline
-    if _rag_pipeline is None:
-        embedder = get_embedding_service()
-        vs = get_vector_store()
-        _rag_pipeline = RAGPipeline(embedder, vs)
-    return _rag_pipeline
+def _get_rag_pipeline() -> RAGPipeline:
+    return RAGPipeline(_get_bm25_index())
 
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xls", ".txt", ".md"}
@@ -54,6 +46,19 @@ EXT_TO_TYPE = {
     ".pdf": "PDF", ".docx": "DOCX", ".xlsx": "XLSX", ".xls": "XLSX",
     ".txt": "TXT", ".md": "MD",
 }
+
+
+class SearchRequest(PydanticBaseModel):
+    query: str
+    top_k: int = 10
+    doc_ids: Optional[List[str]] = None
+
+
+class GenerateRequest(PydanticBaseModel):
+    prompt: str
+    style: str = "policy"
+    top_k: int = 5
+    doc_ids: Optional[List[str]] = None
 
 
 # ──────────────────── Document CRUD ────────────────────
@@ -86,7 +91,9 @@ def get_document(doc_id: str):
 async def upload_document(file: UploadFile = File(...),
                            folder_id: str = Form(""),
                            tags: str = Form("")):
-    ext = os.path.splitext(file.filename or "")[1].lower()
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="文件名不能为空")
+    ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400,
                             detail=f"不支持的文件类型: {ext}。支持: {', '.join(ALLOWED_EXTENSIONS)}")
@@ -121,17 +128,22 @@ async def upload_document(file: UploadFile = File(...),
         parsed = parse_document(file_path, doc_type)
         parsed.doc_id = doc_id
         chunks = chunk_document(parsed)
+
+        # Enrich chunks with doc metadata for BM25
+        for c in chunks:
+            c["doc_id"] = doc_id
+            c["doc_name"] = file.filename
+            c["id"] = f"{doc_id}_chunk_{c.get('chunk_index', 0)}"
+
         doc.chunk_count = len(chunks)
         doc.parsed_at = datetime.now()
 
-        embedder = get_embedding_service()
-        chunk_texts = [c["text"] for c in chunks]
-        embeddings = embedder.embed_texts(chunk_texts)
-
-        vs = get_vector_store()
-        vs.add_chunks(doc_id, doc.name, chunks, embeddings)
+        # Save chunks to JSON and update BM25 index
+        save_chunks(doc_id, chunks)
+        index = _get_bm25_index()
+        index.add_chunks(chunks)
     except Exception as e:
-        logger.error(f"Failed to parse/embed document {doc_id}: {e}")
+        logger.error(f"Failed to parse document {doc_id}: {e}")
         raise HTTPException(status_code=500, detail=f"文档解析失败: {str(e)}")
 
     save_doc(doc)
@@ -160,13 +172,20 @@ def delete_document(doc_id: str):
     doc = get_doc(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    vs = get_vector_store()
-    vs.delete_doc(doc_id)
+
+    # Remove from BM25 index and chunks file
+    index = _get_bm25_index()
+    index.remove_doc(doc_id)
+    delete_doc_chunks(doc_id)
+
+    # Remove metadata
     delete_doc(doc_id)
-    import shutil
+
+    # Remove files
     doc_dir = os.path.join(KB_FILES_DIR, doc_id)
     if os.path.exists(doc_dir):
         shutil.rmtree(doc_dir)
+
     return {"message": "Document deleted successfully"}
 
 
@@ -207,21 +226,20 @@ def download_document(doc_id: str):
 # ──────────────────── Search ────────────────────
 
 @router.post("/knowledge/search")
-def search_knowledge(query: str, top_k: int = 10, doc_ids: str = None):
-    """Semantic vector search across the knowledge base."""
-    doc_id_list = [d.strip() for d in doc_ids.split(",") if d.strip()] if doc_ids else None
-    pipeline = get_rag_pipeline()
-    results = pipeline.retrieve(query, top_k=top_k, doc_ids=doc_id_list)
+def search_knowledge(body: SearchRequest):
+    """BM25 keyword search across the knowledge base."""
+    pipeline = _get_rag_pipeline()
+    results = pipeline.retrieve(body.query, top_k=body.top_k, doc_ids=body.doc_ids)
     return [r.model_dump(mode="json") for r in results]
 
 
 # ──────────────────── RAG Generate ────────────────────
 
 @router.post("/knowledge/generate")
-def generate_content(request: RAGRequest):
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    pipeline = get_rag_pipeline()
-    response = pipeline.generate(request, api_key=api_key)
+def generate_content(body: GenerateRequest):
+    request = RAGRequest(prompt=body.prompt, style=body.style, top_k=body.top_k, doc_ids=body.doc_ids)
+    pipeline = _get_rag_pipeline()
+    response = pipeline.generate(request)
     return response.model_dump(mode="json")
 
 
@@ -276,19 +294,28 @@ def reparse_document(doc_id: str):
         raise HTTPException(status_code=404, detail="Document file not found")
     file_path = os.path.join(doc_dir, files[0])
 
-    vs = get_vector_store()
-    vs.delete_doc(doc_id)
+    # Remove old chunks from BM25 index
+    index = _get_bm25_index()
+    index.remove_doc(doc_id)
+    delete_doc_chunks(doc_id)
 
+    # Re-parse
     parsed = parse_document(file_path, doc.type.value)
     parsed.doc_id = doc_id
     chunks = chunk_document(parsed)
+
+    # Enrich chunks with doc metadata
+    for c in chunks:
+        c["doc_id"] = doc_id
+        c["doc_name"] = doc.name
+        c["id"] = f"{doc_id}_chunk_{c.get('chunk_index', 0)}"
+
     doc.chunk_count = len(chunks)
     doc.parsed_at = datetime.now()
 
-    embedder = get_embedding_service()
-    chunk_texts = [c["text"] for c in chunks]
-    embeddings = embedder.embed_texts(chunk_texts)
-    vs.add_chunks(doc_id, doc.name, chunks, embeddings)
-
+    # Save and update index
+    save_chunks(doc_id, chunks)
+    index.add_chunks(chunks)
     save_doc(doc)
+
     return {"message": f"Reparsed {len(chunks)} chunks", "chunk_count": len(chunks)}

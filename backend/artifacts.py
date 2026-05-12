@@ -1,4 +1,7 @@
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 import json
 import os
 from typing import Dict, List, Optional
@@ -19,14 +22,16 @@ def _read_json(path: str) -> Optional[Dict]:
     if not os.path.exists(path):
         return None
     with open(path, "r", encoding="utf-8") as f:
-        fcntl.flock(f, fcntl.LOCK_SH)
+        if fcntl:
+            fcntl.flock(f, fcntl.LOCK_SH)
         return json.load(f)
 
 
 def _write_json(path: str, data: Dict):
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+        if fcntl:
+            fcntl.flock(f, fcntl.LOCK_EX)
         json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
 

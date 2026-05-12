@@ -1,35 +1,37 @@
 import logging
 from typing import List, Optional
 from .models import SearchResult, RAGRequest, RAGResponse
-from .embedder import EmbeddingService
-from .vector_store import VectorStore
+from .indexer import BM25Index
 from .generator import generate_with_context
+from .storage import get_doc
 
 logger = logging.getLogger(__name__)
 
 
 class RAGPipeline:
 
-    def __init__(self, embedder: EmbeddingService, vector_store: VectorStore):
-        self.embedder = embedder
-        self.vector_store = vector_store
+    def __init__(self, index: BM25Index):
+        self.index = index
 
     def retrieve(self, query: str, top_k: int = 5,
                  doc_ids: Optional[List[str]] = None) -> List[SearchResult]:
-        query_embedding = self.embedder.embed_query(query)
-        raw_results = self.vector_store.search(query_embedding, top_k=top_k, doc_ids=doc_ids)
+        raw_results = self.index.search(query, top_k=top_k, doc_ids=doc_ids)
+
+        unique_ids = {r.get("doc_id") for r in raw_results if r.get("doc_id")}
+        doc_map = {doc_id: get_doc(doc_id) for doc_id in unique_ids}
 
         results = []
         for r in raw_results:
+            doc = doc_map.get(r.get("doc_id", ""))
             results.append(SearchResult(
-                doc_id=r["doc_id"],
-                doc_name=r["doc_name"],
-                doc_type="TXT",
-                chunk_text=r["chunk_text"],
-                chunk_type=r["chunk_type"],
-                heading_path=r["heading_path"],
-                score=r["score"],
-                page=r["page"],
+                doc_id=r.get("doc_id", ""),
+                doc_name=r.get("doc_name", doc.name if doc else ""),
+                doc_type=doc.type if doc else "TXT",
+                chunk_text=r.get("text", ""),
+                chunk_type=r.get("chunk_type", "paragraph"),
+                heading_path=r.get("heading_path", ""),
+                score=r.get("score", 0),
+                page=r.get("page", 0),
             ))
 
         return results
@@ -48,7 +50,7 @@ class RAGPipeline:
         parts.append("</reference_documents>")
         return "\n".join(parts)
 
-    def generate(self, request: RAGRequest, api_key: str = None) -> RAGResponse:
+    def generate(self, request: RAGRequest) -> RAGResponse:
         if request.doc_ids and len(request.doc_ids) > 0:
             search_doc_ids = request.doc_ids
         else:
@@ -60,7 +62,6 @@ class RAGPipeline:
             prompt=request.prompt,
             context_chunks=context,
             style=request.style,
-            api_key=api_key,
         )
 
         return RAGResponse(

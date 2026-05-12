@@ -1,12 +1,17 @@
-import fcntl
 import json
 import os
 from typing import List, Optional
 from .models import KnowledgeDocument, Folder
 
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "data")
 META_FILE = os.path.join(DATA_DIR, "knowledge_metadata.json")
 FOLDERS_FILE = os.path.join(DATA_DIR, "knowledge_folders.json")
+CHUNKS_FILE = os.path.join(DATA_DIR, "knowledge_chunks.json")
 KB_FILES_DIR = os.path.join(DATA_DIR, "knowledge_files")
 
 
@@ -14,14 +19,16 @@ def _read_json(path: str):
     if not os.path.exists(path):
         return []
     with open(path, "r", encoding="utf-8") as f:
-        fcntl.flock(f, fcntl.LOCK_SH)
+        if fcntl:
+            fcntl.flock(f, fcntl.LOCK_SH)
         return json.load(f)
 
 
 def _write_json(path: str, data):
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+        if fcntl:
+            fcntl.flock(f, fcntl.LOCK_EX)
         json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
 
@@ -106,3 +113,23 @@ def get_all_tags() -> List[str]:
 
 def ensure_dirs():
     os.makedirs(KB_FILES_DIR, exist_ok=True)
+
+
+def save_chunks(doc_id: str, chunks: List[dict]):
+    """Append chunks for a doc to knowledge_chunks.json."""
+    all_chunks = load_all_chunks()
+    all_chunks = [c for c in all_chunks if c.get("doc_id") != doc_id]
+    all_chunks.extend(chunks)
+    _write_json(CHUNKS_FILE, all_chunks)
+
+
+def load_all_chunks() -> List[dict]:
+    """Load all chunks from knowledge_chunks.json."""
+    return _read_json(CHUNKS_FILE)
+
+
+def delete_doc_chunks(doc_id: str):
+    """Remove all chunks for a doc from knowledge_chunks.json."""
+    all_chunks = load_all_chunks()
+    filtered = [c for c in all_chunks if c.get("doc_id") != doc_id]
+    _write_json(CHUNKS_FILE, filtered)

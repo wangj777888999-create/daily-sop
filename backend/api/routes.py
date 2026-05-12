@@ -52,7 +52,7 @@ def _convert_steps_format(steps_data: list) -> List[Step]:
                     action = desc.split(':', 1)[0].strip()
                     try:
                         params = json.loads(desc.split(':', 1)[1].strip())
-                    except:
+                    except (json.JSONDecodeError, KeyError, ValueError):
                         params = {}
 
             converted_steps.append(Step(
@@ -276,6 +276,8 @@ async def execute_sop(sop_id: str, files: List[UploadFile] = File(...)):
     input_files = []
     filename_mapping = {}
     for file in files:
+        if not file.filename:
+            continue
         file.file.seek(0, 2)
         size = file.file.tell()
         file.file.seek(0)

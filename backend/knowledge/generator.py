@@ -13,6 +13,10 @@ STYLE_PROMPTS = {
         "你是一位教育成果报告撰写专家。请参考以下模板的结构和表达方式，"
         "用清晰、规范的风格撰写报告。保持与参考文档一致的标题层级、数据呈现方式和行文习惯。"
     ),
+    "polish": (
+        "你是一位专业的文本润色专家。请参考以下文档的表达方式和风格，"
+        "对用户提供的文本进行润色改进，保持原文的核心意思，提升表达质量和专业性。"
+    ),
     "general": (
         "请参考以下文档的内容和表达方式，生成内容时保持相似的风格和术语。"
     ),
@@ -20,9 +24,8 @@ STYLE_PROMPTS = {
 
 
 def generate_with_context(prompt: str, context_chunks: str,
-                          style: str = "policy", api_key: str = None) -> tuple:
-    if not api_key:
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+                          style: str = "policy") -> tuple:
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
 
     style_instruction = STYLE_PROMPTS.get(style, STYLE_PROMPTS["general"])
 
@@ -40,7 +43,7 @@ def generate_with_context(prompt: str, context_chunks: str,
         logger.warning("No ANTHROPIC_API_KEY set, returning template response")
         return (
             f"[需要设置 ANTHROPIC_API_KEY 环境变量]\n\n"
-            f"系统将基于以下 {context_chunks.count('[文档名') if context_chunks else 0} 篇参考文档生成内容：\n\n"
+            f"系统将基于以下 {context_chunks.count('\n[') if context_chunks else 0} 篇参考文档生成内容：\n\n"
             f"{context_chunks}\n\n"
             f"任务：{prompt}",
             [],

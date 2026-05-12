@@ -17,10 +17,10 @@ export interface ExecutionResult {
 }
 
 // 后端 → 前端 字段适配
-function adaptExecutionResponse(data: any): ExecutionResult {
+function adaptExecutionResponse(data: any, sopId?: string): ExecutionResult {
   return {
     id: data.execution_id ?? data.id,
-    sop_id: data.sop_id,
+    sop_id: data.sop_id ?? sopId,
     status: data.status,
     input_files: data.input_files,
     output_file: data.output_file,
@@ -154,7 +154,7 @@ export async function executeSOP(sopId: string, files?: File[]): Promise<Executi
     })
     if (!response.ok) throw new Error('Failed to execute SOP')
     const data = await response.json()
-    const adapted = adaptExecutionResponse(data)
+    const adapted = adaptExecutionResponse(data, sopId)
     currentExecution.value = adapted
     return adapted
   } catch (error) {

@@ -74,15 +74,14 @@ export async function deleteDocument(id: string): Promise<boolean> {
 export async function searchDocuments(query: string, doc_ids?: string[], top_k: number = 10): Promise<SearchResult[]> {
   searchLoading.value = true
   try {
-    const formData = new FormData()
-    formData.append('query', query)
-    formData.append('top_k', String(top_k))
+    const body: any = { query, top_k }
     if (doc_ids && doc_ids.length > 0) {
-      formData.append('doc_ids', doc_ids.join(','))
+      body.doc_ids = doc_ids
     }
     const data = await request<SearchResult[]>(`${API_BASE}/search`, {
       method: 'POST',
-      body: formData,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     })
     searchResults.value = data
     return data
