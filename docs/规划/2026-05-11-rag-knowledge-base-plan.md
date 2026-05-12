@@ -1,10 +1,12 @@
-# RAG 向量知识库开发计划
+# RAG 知识库开发计划
+
+> **架构更新（2026-05-12）**：检索层从"向量嵌入 + ChromaDB"改为 **BM25 + jieba**，去掉 torch/transformers/text2vec/ChromaDB 等重依赖。API Key 通过 `ANTHROPIC_API_KEY` 环境变量读取（由 ccswitch 管理），不通过前端传参。
 
 ## Context
 
 智能工作台需要知识库功能，存储公司内部资料（政策文档、报告模板等），通过 RAG（检索增强生成）让生成的内容能学习参考文档的表达方式和知识。
 
-**核心技术栈：** ChromaDB（向量存储） + text2vec-large-chinese（嵌入模型） + Claude API（生成）
+**核心技术栈：** BM25（关键词检索） + jieba（中文分词） + Claude API（生成）
 
 **核心场景：**
 - 政策撰写：参考以往政策格式和表达
@@ -12,10 +14,10 @@
 
 **RAG 流程：**
 ```
-Upload → Parse → Chunk → Embed → ChromaDB
-                                      ↓
-Query → Embed → Similarity Search → Top-K Chunks
-                                      ↓
+Upload → Parse → Chunk → JSON Store
+                              ↓ 启动时重建 BM25 索引
+Query → jieba 分词 → BM25 Scoring → Top-K Chunks
+                                          ↓
 Chunks + Prompt → Claude API → Generated Content
 ```
 
@@ -23,15 +25,14 @@ Chunks + Prompt → Claude API → Generated Content
 
 ```
 # backend/requirements.txt 新增
-chromadb>=0.5.0
-text2vec>=1.2.0
-torch>=2.0.0
-transformers>=4.30.0
-sentence-transformers>=2.2.0
+rank-bm25>=0.2.2
+jieba>=0.42.1
 anthropic>=0.30.0
 python-docx>=1.1.0
 pdfplumber>=0.10.0
-jieba>=0.42.1
+
+# 不再需要（删除）：
+# chromadb, text2vec, torch, transformers, sentence-transformers
 ```
 
 ## Backend Architecture
@@ -43,18 +44,17 @@ backend/
   knowledge/
     __init__.py              # 包导出
     models.py                # Pydantic 模型
-    storage.py               # 文档元数据 JSON 持久化（复用 sops/storage.py 模式）
+    storage.py               # 文档元数据 + chunk JSON 持久化（fcntl + 原子写入）
     parser.py                # 文档解析（PDF/DOCX/XLSX/TXT/MD）
     chunker.py               # 文本分块（中文文档优化）
-    embedder.py              # text2vec-large-chinese 嵌入服务（启动时加载，单例）
-    vector_store.py          # ChromaDB 操作封装
+    indexer.py               # BM25 索引（jieba 分词，启动时从 JSON 重建，内存常驻）
     rag.py                   # RAG 检索 + 生成管线
-    generator.py             # Claude API 调用（prompt 构建 + context 增强）
+    generator.py             # Claude API 调用（读 ANTHROPIC_API_KEY env var）
   api/
     knowledge_routes.py      # 知识库 API 端点
 data/
-  chroma_db/                 # ChromaDB 持久化目录
   knowledge_metadata.json    # 文档元数据（快速列表）
+  knowledge_chunks.json      # 所有 chunk 文本（BM25 索引数据源）
   knowledge_files/           # 上传的原始文件
     {doc_id}/original.ext
 ```
@@ -78,12 +78,14 @@ class Folder(BaseModel):
     created_at: datetime
 
 class ChunkMetadata(BaseModel):
-    """存入 ChromaDB 的每个 chunk 元数据"""
+    """存入 knowledge_chunks.json 的每个 chunk 元数据"""
+    id: str               # f"{doc_id}_chunk_{chunk_index}"
     doc_id: str
     doc_name: str
     chunk_index: int
     chunk_type: str       # "heading" | "paragraph" | "table" | "list"
     heading_path: str     # 所在章节路径，如 "第一章 > 1.1 背景"
+    text: str             # chunk 文本（BM25 索引的检索对象）
     page: int = 0
 
 class KnowledgeDocument(BaseModel):
@@ -112,7 +114,7 @@ class SearchResult(BaseModel):
     chunk_text: str
     chunk_type: str
     heading_path: str
-    score: float          # 余弦相似度，越高越相关
+    score: float          # BM25 分数（归一化到 0-1），越高越相关
     page: int = 0
 
 class RAGRequest(BaseModel):
@@ -144,7 +146,7 @@ def delete_folder(folder_id: str) -> bool
 def get_all_tags() -> List[str]
 ```
 
-**注意：** JSON 只存元数据（便于快速列表/筛选），chunk 内容和向量全部在 ChromaDB 中。
+**注意：** `knowledge_metadata.json` 存文档元数据（列表/筛选用）；`knowledge_chunks.json` 存所有 chunk 文本（BM25 索引数据源）。两个文件各自用 fcntl + 原子写入保证一致性。
 
 #### `backend/knowledge/parser.py` — 文档解析
 
@@ -175,89 +177,95 @@ def chunk_document(parsed: ParsedDocument, max_chunk_size: int = 500, overlap: i
     """
 ```
 
-#### `backend/knowledge/embedder.py` — 嵌入服务
+#### `backend/knowledge/indexer.py` — BM25 索引
 
 ```python
-class EmbeddingService:
-    """text2vec-large-chinese 单例，启动时加载一次"""
+import jieba
+from rank_bm25 import BM25Okapi
+
+class BM25Index:
+    """BM25 内存索引，启动时从 knowledge_chunks.json 重建，增删文档后即时更新"""
 
     def __init__(self):
-        from text2vec import SentenceModel
-        self.model = SentenceModel("shibing624/text2vec-large-chinese")  # 1024-dim
+        self._chunks: List[dict] = []   # chunk 元数据列表（含 text 字段）
+        self._index: BM25Okapi | None = None
 
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
-        """批量嵌入文本，返回 1024 维向量列表"""
+    def build(self, chunks: List[dict]):
+        """从 chunk 列表重建索引（每条含 id/doc_id/text/heading_path 等字段）"""
+        self._chunks = chunks
+        tokenized = [list(jieba.cut(c["text"])) for c in chunks]
+        self._index = BM25Okapi(tokenized)
 
-    def embed_query(self, query: str) -> List[float]:
-        """嵌入单个查询"""
-```
-
-**启动加载策略：** 在 FastAPI `startup` 事件中初始化，存入 `app.state.embedding_service`。首次加载模型约 10-30 秒（~1.3GB），后续请求直接复用。
-
-#### `backend/knowledge/vector_store.py` — ChromaDB 操作
-
-```python
-class VectorStore:
-    """ChromaDB 封装，单 collection：knowledge_chunks"""
-
-    def __init__(self, persist_dir: str):
-        import chromadb
-        self.client = chromadb.PersistentClient(path=persist_dir)
-        self.collection = self.client.get_or_create_collection(
-            name="knowledge_chunks",
-            metadata={"hnsw:space": "cosine"}  # 余弦相似度
-        )
-
-    def add_chunks(self, doc_id: str, chunks: List[dict], embeddings: List[List[float]]):
-        """批量写入 chunks + embeddings + metadata"""
-
-    def search(self, query_embedding: List[float], top_k: int = 5,
+    def search(self, query: str, top_k: int = 5,
                doc_ids: List[str] = None) -> List[dict]:
-        """向量相似度搜索，可选按 doc_ids 过滤"""
+        """BM25 检索，返回带 score 的 chunk 列表（score 归一化到 0-1）"""
+        if not self._index or not self._chunks:
+            return []
+        tokens = list(jieba.cut(query))
+        raw_scores = self._index.get_scores(tokens)
+        max_score = max(raw_scores) if max(raw_scores) > 0 else 1
+        results = []
+        for chunk, raw in zip(self._chunks, raw_scores):
+            if raw == 0:
+                continue
+            if doc_ids and chunk["doc_id"] not in doc_ids:
+                continue
+            results.append({**chunk, "score": round(raw / max_score, 4)})
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results[:top_k]
 
-    def delete_doc(self, doc_id: str):
-        """删除文档的所有 chunks"""
+    def add_chunks(self, new_chunks: List[dict]):
+        """追加 chunks 并重建索引"""
+        self._chunks.extend(new_chunks)
+        self.build(self._chunks)
 
-    def update_chunk(self, chunk_id: str, embedding: List[float], metadata: dict):
-        """更新单个 chunk"""
+    def remove_doc(self, doc_id: str):
+        """删除某文档的所有 chunks 并重建索引"""
+        self._chunks = [c for c in self._chunks if c["doc_id"] != doc_id]
+        self.build(self._chunks) if self._chunks else setattr(self, "_index", None)
 
-    def count(self) -> int:
-        """总 chunk 数"""
+    @property
+    def chunk_count(self) -> int:
+        return len(self._chunks)
 ```
+
+**启动策略：** FastAPI `startup` 从 `knowledge_chunks.json` 加载所有 chunks，调用 `index.build()`。文档数量 <1000 时重建耗时 <1s，无冷启动问题。索引存 `app.state.bm25_index`。
 
 #### `backend/knowledge/rag.py` — RAG 管线
 
 ```python
 class RAGPipeline:
-    """检索增强生成：embed query → search → build context → generate"""
+    """检索增强生成：BM25 query → top-k chunks → build context → Claude generate"""
 
-    def __init__(self, embedder: EmbeddingService, vector_store: VectorStore):
-        ...
+    def __init__(self, index: BM25Index):
+        self.index = index
 
     def retrieve(self, query: str, top_k: int = 5,
                  doc_ids: List[str] = None) -> List[SearchResult]:
-        """检索：query embedding → ChromaDB 相似度搜索 → SearchResult 列表"""
+        """检索：jieba 分词 → BM25 scoring → SearchResult 列表"""
 
     def build_context(self, results: List[SearchResult]) -> str:
         """构建增强上下文：格式化 retrieved chunks 注入 prompt"""
 
-    def generate(self, request: RAGRequest, api_key: str) -> RAGResponse:
+    def generate(self, request: RAGRequest) -> RAGResponse:
         """
         完整 RAG 流程：
-        1. 如果有 doc_ids 限制 → 在这些文档内搜索
-        2. 否则全库搜索
-        3. embed query → ChromaDB.search(top_k)
-        4. build_context → 拼接 system prompt
-        5. Claude API 调用 → generated_text
-        6. 返回 RAGResponse（含来源引用）
+        1. BM25 检索（可选 doc_ids 范围限制）
+        2. build_context → 拼接 system prompt
+        3. Claude API 调用（api_key 从 ANTHROPIC_API_KEY env var 读取）
+        4. 返回 RAGResponse（含来源引用）
         """
 ```
 
 #### `backend/knowledge/generator.py` — Claude API 调用
 
 ```python
+import os, anthropic
+
 def generate_with_context(prompt: str, context_chunks: List[dict],
-                          style: str = "policy", api_key: str = None) -> tuple[str, list]:
+                          style: str = "policy") -> tuple[str, list]:
+    # API Key 从环境变量读取，由 ccswitch 管理，无需前端传参
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     """
     构建 Claude 调用：
 
@@ -294,30 +302,36 @@ def generate_with_context(prompt: str, context_chunks: List[dict],
 |--------|------|-------------|
 | `GET` | `/documents` | 列出文档（`?folder_id=&type=&tag=&sort_by=`） |
 | `GET` | `/documents/{id}` | 获取文档元数据 |
-| `POST` | `/documents` | 上传文档（multipart: file + folder_id + tags）→ 解析 → 分块 → 嵌入 → ChromaDB |
+| `POST` | `/documents` | 上传文档（multipart: file + folder_id + tags）→ 解析 → 分块 → 写 JSON + 更新 BM25 索引 |
 | `PUT` | `/documents/{id}` | 更新元数据 |
-| `DELETE` | `/documents/{id}` | 删除文档（文件 + metadata + ChromaDB chunks） |
+| `DELETE` | `/documents/{id}` | 删除文档（文件 + metadata + chunks + BM25 索引重建） |
 | `GET` | `/documents/{id}/content` | 获取解析后的文档内容 |
 | `GET` | `/documents/{id}/download` | 下载原始文件 |
-| `POST` | `/search` | 语义搜索（`{query, top_k?, doc_ids?}`）→ SearchResult[] |
+| `POST` | `/search` | BM25 关键词检索（`{query, top_k?, doc_ids?}`）→ SearchResult[] |
 | `POST` | `/generate` | **RAG 生成**（`{prompt, doc_ids?, top_k?, style}`）→ RAGResponse |
 | `GET` | `/folders` | 列出文件夹 |
 | `POST` | `/folders` | 创建文件夹 |
 | `PUT` | `/folders/{id}` | 重命名文件夹 |
 | `DELETE` | `/folders/{id}` | 删除文件夹 |
 | `GET` | `/tags` | 获取所有标签 |
-| `POST` | `/reparse/{id}` | 强制重新解析/嵌入文档 |
+| `POST` | `/reparse/{id}` | 强制重新解析文档，重建 chunks + 更新 BM25 索引 |
 
 **`backend/main.py` 修改：**
 ```python
 from api import routes, knowledge_routes
-from knowledge.embedder import EmbeddingService
+from knowledge.storage import load_all_chunks
+from knowledge.indexer import BM25Index
 
 app = FastAPI(title="AI Analyst", version="2.0.0")
 
 @app.on_event("startup")
 async def startup():
-    app.state.embedding_service = EmbeddingService()  # 加载 text2vec 模型
+    index = BM25Index()
+    chunks = load_all_chunks()      # 从 knowledge_chunks.json 加载
+    if chunks:
+        index.build(chunks)
+    app.state.bm25_index = index
+    logging.info(f"BM25 index ready: {index.chunk_count} chunks")
 
 app.include_router(routes.router, prefix="/api")
 app.include_router(knowledge_routes.router, prefix="/api")
@@ -328,23 +342,30 @@ app.include_router(knowledge_routes.router, prefix="/api")
 ```
 1. 接收文件 → 校验类型 + 大小(<100MB)
 2. 保存到 data/knowledge_files/{uuid}/original.ext
-3. SHA256 哈希
+3. SHA256 哈希（去重校验）
 4. parser.parse_document() → ParsedDocument
-5. chunker.chunk_document() → chunks[]
-6. embedder.embed_texts([c.text for c in chunks]) → embeddings[]
-7. vector_store.add_chunks(doc_id, chunks, embeddings)
+5. chunker.chunk_document() → chunks[]（含 id/text/heading_path 等字段）
+6. storage.save_chunks(doc_id, chunks) → 追加写入 knowledge_chunks.json
+7. app.state.bm25_index.add_chunks(chunks) → 实时更新内存索引
 8. storage.save_doc(KnowledgeDocument)
 9. 返回 KnowledgeDocument
+```
+
+### search 端点关键流程（POST /api/knowledge/search）
+
+```
+1. app.state.bm25_index.search(query, top_k, doc_ids=...) → top-k chunks with score
+2. 查询 storage 补全 doc_type 等元数据
+3. 返回 SearchResult[]
 ```
 
 ### generate 端点关键流程（POST /api/knowledge/generate）
 
 ```
-1. embed query
-2. vector_store.search(query_embedding, top_k, doc_ids=...)
-3. generator.generate_with_context(prompt, retrieved_chunks, style, api_key)
-4. Claude API 调用
-5. 返回 {generated_text, sources}
+1. BM25 检索（同 search 流程）
+2. generator.generate_with_context(prompt, retrieved_chunks, style)
+3. 读 ANTHROPIC_API_KEY env var → Claude API 调用
+4. 返回 {generated_text, sources}
 ```
 
 ## 前端现有钩子对齐清单
@@ -378,7 +399,7 @@ app.include_router(knowledge_routes.router, prefix="/api")
 | "上传文档" 按钮 (54行) | 无事件 | `@click` → 打开 UploadDialog |
 | "新建文件夹" 按钮 (55行) | 无事件 | `@click` → 弹出输入框 → `store.createFolder(name)` |
 | "搜索" 按钮 (143行) | 无事件 | `@click` → `store.search(searchText)` |
-| "语义"/"关键词" chip (141行) | 展示用 | 切换 searchMode: 'semantic' | 'keyword' |
+| "语义"/"关键词" chip (141行) | 展示用 | BM25 方案统一为关键词检索，chip 只保留"关键词"选项，移除"语义"选项 |
 
 ### 2. PolicyPage.vue → 文档编辑器 + KB 集成点
 
@@ -559,12 +580,11 @@ PolicyPage 右侧 "参考资料" 卡片：
 ### Phase 1 验证清单
 
 **Backend (API):**
-1. 启动后端 → text2vec 模型加载成功（日志确认）
-2. ChromaDB 在 `data/chroma_db/` 初始化成功
-3. `curl -F "file=@政策文件.docx" /api/knowledge/documents` → 200 + 返回 doc_id + chunk_count > 0
-4. `curl /api/knowledge/search -d '{"query":"教育政策"}'` → 返回相关 chunks 含相似度分数
-5. `curl /api/knowledge/generate -d '{"prompt":"撰写一份校园安全管理政策","style":"policy"}'` → Claude 返回生成文本 + sources
-6. `curl -X DELETE /api/knowledge/documents/{id}` → 文件 + metadata + ChromaDB chunks 全部清理
+1. 启动后端 → 日志显示 `BM25 index ready: N chunks`（首次为 0）
+2. `curl -F "file=@政策文件.docx" /api/knowledge/documents` → 200 + 返回 doc_id + chunk_count > 0
+3. `curl /api/knowledge/search -d '{"query":"教育政策"}'` → 返回 top-k chunks 含 BM25 score（0-1）
+4. `ANTHROPIC_API_KEY` 已由 ccswitch 设置的前提下：`curl /api/knowledge/generate -d '{"prompt":"撰写一份校园安全管理政策","style":"policy"}'` → Claude 返回生成文本 + sources
+5. `curl -X DELETE /api/knowledge/documents/{id}` → 文件 + metadata + chunks 全部清理，日志显示 BM25 索引重建
 
 **前端 — KnowledgePage（19 处钩子验证）:**
 7. 页面加载 → 从 API 获取 folders + documents 列表，文件卡片正确显示类型徽章颜色
