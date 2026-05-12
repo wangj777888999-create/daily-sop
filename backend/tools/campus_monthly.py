@@ -15,6 +15,14 @@ import json
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
 UPLOAD_DIR = os.path.join(DATA_DIR, "monthly_output")
 
+def _read_excel(data: bytes, sheet_name: str) -> pd.DataFrame:
+    """自动选择 Excel 引擎：先尝试 openpyxl（.xlsx），失败后退回 xlrd（.xls）"""
+    try:
+        return pd.read_excel(io.BytesIO(data), sheet_name=sheet_name, engine='openpyxl')
+    except Exception:
+        return pd.read_excel(io.BytesIO(data), sheet_name=sheet_name, engine='xlrd')
+
+
 def _get_dept_file() -> str:
     config_path = os.path.join(DATA_DIR, "config.json")
     with open(config_path, "r", encoding="utf-8") as f:
@@ -313,17 +321,17 @@ def process_monthly(
 
     # 3. 校内财务分析（需上传财务文件）
     if finance_bytes:
-        finance_df = pd.read_excel(io.BytesIO(finance_bytes), sheet_name='财务', engine='xlrd')
+        finance_df = _read_excel(finance_bytes, sheet_name='财务')
         data_to_export['校内分析'] = campus_finance_analysis(att_df.copy(), finance_df)
 
     # 4. 课程类型分析（需上传课程类型文件）
     if course_type_bytes:
-        type_file = pd.read_excel(io.BytesIO(course_type_bytes), sheet_name='Sheet1')
+        type_file = _read_excel(course_type_bytes, sheet_name='Sheet1')
         data_to_export['类型分析'] = course_type_analysis(att_df.copy(), type_file, year, month)
 
     # 5. 退款分析（需上传退款文件 + 部门划分）
     if refund_bytes:
-        refund_df = pd.read_excel(io.BytesIO(refund_bytes), sheet_name='导出', engine='xlrd')
+        refund_df = _read_excel(refund_bytes, sheet_name='导出')
         dept_file = _get_dept_file()
         if os.path.exists(dept_file):
             department = pd.read_excel(dept_file, sheet_name='Sheet1')

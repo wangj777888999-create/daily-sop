@@ -13,6 +13,16 @@ export const tools: Tool[] = [
     iframeHeight: 800,
   },
   {
+    id: 'checkin-consolidation',
+    name: '签到数据整合',
+    description: '月度签到数据校对、补签、确认，作为月度分析的数据源',
+    icon: '◈',
+    color: '#8B5CF6',
+    tags: ['签到', '月度', '整合'],
+    type: 'vue',
+    route: '/tools/checkin-consolidation',
+  },
+  {
     id: 'daily-checkin',
     name: '每日教练签到分析',
     description: '每日签到+财务数据处理，自动存库供月度分析使用',

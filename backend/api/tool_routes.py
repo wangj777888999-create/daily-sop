@@ -7,14 +7,20 @@ import io
 import json
 import os
 
-from tools.daily_checkin import preview_files, process_files, _generate_excel
+from tools.daily_checkin import preview_files, process_files
 from tools.db import (
     save_checkin_records, get_batches, get_available_months, get_checkin_by_month,
     save_monthly_analysis, get_monthly_analyses, delete_batch, delete_monthly_analysis,
+    save_consolidation, get_consolidation, update_consolidation_status,
+    get_consolidations, delete_consolidation,
 )
 from tools.campus_monthly import preview_monthly, process_monthly, UPLOAD_DIR
+from tools.checkin_consolidation import (
+    load_month_records, save_consolidation_data, load_consolidation_data, export_excel,
+)
 
 CHECKIN_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "checkin_output")
+CONSOLIDATION_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "consolidation_output")
 
 router = APIRouter()
 
@@ -134,10 +140,15 @@ async def campus_monthly_preview(
     year: int = Form(...),
     month: int = Form(...),
 ):
-    records = get_checkin_by_month(year, month)
+    consolidation = get_consolidation(year, month)
+    if consolidation and consolidation["status"] == "confirmed":
+        records = load_consolidation_data(consolidation["filename"])
+    else:
+        records = get_checkin_by_month(year, month)
     preview = preview_monthly(year, month, records)
     preview["year"] = year
     preview["month"] = month
+    preview["data_source"] = "consolidated" if (consolidation and consolidation["status"] == "confirmed") else "raw"
     return preview
 
 
@@ -149,7 +160,11 @@ async def campus_monthly_process(
     course_type_file: Optional[UploadFile] = File(None),
     refund_file: Optional[UploadFile] = File(None),
 ):
-    records = get_checkin_by_month(year, month)
+    consolidation = get_consolidation(year, month)
+    if consolidation and consolidation["status"] == "confirmed":
+        records = load_consolidation_data(consolidation["filename"])
+    else:
+        records = get_checkin_by_month(year, month)
     if not records:
         raise HTTPException(status_code=400, detail=f"{year}年{month}月无签到数据，请先使用每日签到工具积累数据")
 
@@ -222,3 +237,124 @@ async def campus_monthly_delete(analysis_id: int):
             os.remove(filepath)
 
     return {"deleted": True, "analysis_id": analysis_id}
+
+
+# ──────────────────── Check-in Consolidation ────────────────────
+
+@router.post("/tools/checkin-consolidation/load")
+async def checkin_consolidation_load(year: int = Form(...), month: int = Form(...)):
+    # 优先加载已整合的 JSON，保留补签等修改；无整合时从 SQLite 加载原始数据
+    consolidation = get_consolidation(year, month)
+    if consolidation and consolidation.get("filename"):
+        try:
+            records = load_consolidation_data(consolidation["filename"])
+            transformed = load_month_records(records)
+            return {
+                "records": transformed,
+                "count": len(transformed),
+                "from_consolidation": True,
+                "status": consolidation["status"],
+                "consolidation_id": consolidation["id"],
+            }
+        except FileNotFoundError:
+            pass  # 文件丢失，回退到 SQLite
+
+    records = get_checkin_by_month(year, month)
+    if not records:
+        raise HTTPException(status_code=400, detail=f"{year}年{month}月无签到数据")
+    transformed = load_month_records(records)
+    return {"records": transformed, "count": len(transformed), "from_consolidation": False}
+
+
+@router.post("/tools/checkin-consolidation/save")
+async def checkin_consolidation_save(
+    year: int = Form(...),
+    month: int = Form(...),
+    records: str = Form(...),
+):
+    parsed_records = json.loads(records)
+    # 补签归一化为在岗
+    for r in parsed_records:
+        if r.get("sign_status") == "补签":
+            r["sign_status"] = "在岗"
+
+    result = save_consolidation_data(year, month, parsed_records)
+    consolidation_id = save_consolidation(
+        year, month, result["record_count"], result["filename"], status="draft"
+    )
+
+    # 查回当前记录确认状态
+    consolidation = get_consolidation(year, month)
+    return {
+        "id": consolidation["id"],
+        "record_count": result["record_count"],
+        "status": consolidation["status"],
+    }
+
+
+@router.post("/tools/checkin-consolidation/confirm")
+async def checkin_consolidation_confirm(id: int = Form(...)):
+    success = update_consolidation_status(id, "confirmed")
+    if not success:
+        raise HTTPException(status_code=404, detail="整合记录不存在")
+    return {"confirmed": True, "id": id}
+
+
+@router.post("/tools/checkin-consolidation/unconfirm")
+async def checkin_consolidation_unconfirm(id: int = Form(...)):
+    success = update_consolidation_status(id, "draft")
+    if not success:
+        raise HTTPException(status_code=404, detail="整合记录不存在")
+    return {"unconfirmed": True, "id": id, "status": "draft"}
+
+
+@router.get("/tools/checkin-consolidation/status/{year}/{month}")
+async def checkin_consolidation_status(year: int, month: int):
+    consolidation = get_consolidation(year, month)
+    if not consolidation:
+        return {"exists": False}
+    return {"exists": True, **consolidation}
+
+
+@router.get("/tools/checkin-consolidation/history")
+async def checkin_consolidation_history(limit: int = Query(50, ge=1, le=200)):
+    return get_consolidations(limit)
+
+
+@router.get("/tools/checkin-consolidation/download/{consolidation_id}")
+async def checkin_consolidation_download(consolidation_id: int):
+    consolidations = get_consolidations(limit=200)
+    item = next((c for c in consolidations if c["id"] == consolidation_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="记录不存在")
+
+    filename = item.get("filename", "")
+    if not filename:
+        raise HTTPException(status_code=404, detail="该记录无生成文件")
+
+    filepath = os.path.join(CONSOLIDATION_OUTPUT_DIR, filename)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="文件不存在，请重新整合")
+
+    records = load_consolidation_data(filename)
+    excel_bytes = export_excel(records)
+    download_name = f"{item['year']}年{item['month']}月签到整合.xlsx"
+
+    return StreamingResponse(
+        io.BytesIO(excel_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(download_name)}"},
+    )
+
+
+@router.delete("/tools/checkin-consolidation/{consolidation_id}")
+async def checkin_consolidation_delete(consolidation_id: int):
+    info = delete_consolidation(consolidation_id)
+    if not info:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    filename = info.get("filename", "")
+    if filename:
+        filepath = os.path.join(CONSOLIDATION_OUTPUT_DIR, filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+    return {"deleted": True, "id": consolidation_id}

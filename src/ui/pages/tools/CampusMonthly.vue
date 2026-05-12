@@ -7,7 +7,7 @@ type Step = 'select' | 'preview' | 'result'
 
 const step = ref<Step>('select')
 const year = ref(new Date().getFullYear())
-const month = ref(new Date().getMonth()) // default to last month
+const month = ref(new Date().getMonth() || 12) // 0→12（1月时取上年12月），其余月份正确对应上月
 const financeFile = ref<File | null>(null)
 const courseTypeFile = ref<File | null>(null)
 const refundFile = ref<File | null>(null)

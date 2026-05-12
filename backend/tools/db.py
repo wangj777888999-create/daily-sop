@@ -68,6 +68,18 @@ def init_db():
             ON daily_checkin(coach_name, check_date);
         CREATE INDEX IF NOT EXISTS idx_monthly_year_month
             ON monthly_analyses(year, month, analysis_type);
+
+        CREATE TABLE IF NOT EXISTS monthly_checkin_consolidation (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            record_count INTEGER DEFAULT 0,
+            filename TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(year, month)
+        );
     """)
     # Migration: add output_filename if missing
     try:
@@ -214,6 +226,73 @@ def delete_monthly_analysis(analysis_id: int) -> Optional[Dict[str, Any]]:
 
     info = dict(row)
     conn.execute("DELETE FROM monthly_analyses WHERE id = ?", (analysis_id,))
+    conn.commit()
+    conn.close()
+    return info
+
+
+# ──────────────────── Check-in Consolidation ────────────────────
+
+def save_consolidation(year: int, month: int, record_count: int, filename: str, status: str = 'draft') -> int:
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO monthly_checkin_consolidation (year, month, status, record_count, filename, updated_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(year, month) DO UPDATE SET
+            status = excluded.status,
+            record_count = excluded.record_count,
+            filename = excluded.filename,
+            updated_at = CURRENT_TIMESTAMP
+    """, (year, month, status, record_count, filename))
+    row_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return row_id
+
+
+def get_consolidation(year: int, month: int) -> Optional[Dict[str, Any]]:
+    conn = _get_conn()
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT * FROM monthly_checkin_consolidation WHERE year = ? AND month = ?",
+        (year, month)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_consolidation_status(consolidation_id: int, status: str) -> bool:
+    conn = _get_conn()
+    cur = conn.execute(
+        "UPDATE monthly_checkin_consolidation SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (status, consolidation_id)
+    )
+    conn.commit()
+    affected = cur.rowcount
+    conn.close()
+    return affected > 0
+
+
+def get_consolidations(limit: int = 50) -> List[Dict[str, Any]]:
+    conn = _get_conn()
+    rows = conn.execute("""
+        SELECT * FROM monthly_checkin_consolidation
+        ORDER BY year DESC, month DESC LIMIT ?
+    """, (limit,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def delete_consolidation(consolidation_id: int) -> Optional[Dict[str, Any]]:
+    conn = _get_conn()
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM monthly_checkin_consolidation WHERE id = ?", (consolidation_id,)).fetchone()
+    if not row:
+        conn.close()
+        return None
+    info = dict(row)
+    conn.execute("DELETE FROM monthly_checkin_consolidation WHERE id = ?", (consolidation_id,))
     conn.commit()
     conn.close()
     return info

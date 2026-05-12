@@ -41,6 +41,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '每日教练签到分析' }
       },
       {
+        path: 'checkin-consolidation',
+        name: 'checkin-consolidation-tool',
+        component: () => import('@/ui/pages/tools/CheckinConsolidation.vue'),
+        meta: { title: '签到数据整合' }
+      },
+      {
         path: 'campus-monthly',
         name: 'campus-monthly-tool',
         component: () => import('@/ui/pages/tools/CampusMonthly.vue'),

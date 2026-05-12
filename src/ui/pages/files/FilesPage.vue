@@ -8,6 +8,7 @@ interface CheckinBatch {
   batch_date: string
   coach_file: string
   finance_file: string
+  output_filename: string
   record_count: number
   status: string
   created_at: string
@@ -62,6 +63,34 @@ function downloadCheckin(id: number) {
 
 function downloadMonthly(id: number) {
   window.open(`/api/tools/campus-monthly/download/${id}`, '_blank')
+}
+
+async function deleteCheckin(id: number) {
+  if (!confirm('确定删除该批次？关联的签到数据和生成文件将一并删除，此操作不可恢复。')) return
+  try {
+    const res = await fetch(`/api/tools/daily-checkin/batch/${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const err = await res.json()
+      throw new Error(err.detail || '删除失败')
+    }
+    await fetchCheckin()
+  } catch (e: any) {
+    errorMsg.value = e.message
+  }
+}
+
+async function deleteMonthly(id: number) {
+  if (!confirm('确定删除该月度分析？生成的 Excel 文件将一并删除，此操作不可恢复。')) return
+  try {
+    const res = await fetch(`/api/tools/campus-monthly/analysis/${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const err = await res.json()
+      throw new Error(err.detail || '删除失败')
+    }
+    await fetchMonthly()
+  } catch (e: any) {
+    errorMsg.value = e.message
+  }
 }
 
 function formatDate(s: string) {
@@ -129,10 +158,11 @@ onMounted(loadAll)
       </div>
       <div v-else class="flex flex-col gap-2">
         <!-- 表头 -->
-        <div class="grid grid-cols-[120px_1fr_1fr_80px_80px_100px] gap-3 px-4 py-2 text-[11px] text-text-light font-medium">
+        <div class="grid grid-cols-[120px_1fr_1fr_1fr_80px_80px_120px] gap-3 px-4 py-2 text-[11px] text-text-light font-medium">
           <span>处理日期</span>
           <span>签到文件</span>
           <span>财务文件</span>
+          <span>生成文件</span>
           <span class="text-center">记录数</span>
           <span class="text-center">状态</span>
           <span class="text-center">操作</span>
@@ -141,7 +171,7 @@ onMounted(loadAll)
         <div
           v-for="batch in checkinBatches"
           :key="batch.id"
-          class="grid grid-cols-[120px_1fr_1fr_80px_80px_100px] gap-3 items-center px-4 py-3 bg-card-bg border border-border/70 rounded-xl text-[13px] hover:border-accent/30 transition-colors"
+          class="grid grid-cols-[120px_1fr_1fr_1fr_80px_80px_120px] gap-3 items-center px-4 py-3 bg-card-bg border border-border/70 rounded-xl text-[13px] hover:border-accent/30 transition-colors"
         >
           <span class="font-medium text-text-heading">{{ formatDate(batch.batch_date) }}</span>
           <span class="text-text-body truncate" :title="batch.coach_file">
@@ -149,6 +179,9 @@ onMounted(loadAll)
           </span>
           <span class="text-text-body truncate" :title="batch.finance_file">
             {{ batch.finance_file || '-' }}
+          </span>
+          <span class="text-text-body truncate" :title="batch.output_filename">
+            {{ batch.output_filename || '-' }}
           </span>
           <span class="text-center text-text-body">{{ batch.record_count }}</span>
           <span class="text-center">
@@ -163,10 +196,16 @@ onMounted(loadAll)
           </span>
           <span class="text-center">
             <button
-              class="text-[12px] text-accent hover:text-accent-dark border border-accent/30 px-2.5 py-1 rounded-lg hover:bg-accent/5 transition-colors"
+              class="text-[12px] text-accent hover:text-accent-dark border border-accent/30 px-2.5 py-1 rounded-lg hover:bg-accent/5 transition-colors mr-1.5"
               @click="downloadCheckin(batch.id)"
             >
               ↓ 下载
+            </button>
+            <button
+              class="text-[12px] text-red-500 hover:text-red-600 border border-red-200 px-2.5 py-1 rounded-lg hover:bg-red-50 transition-colors"
+              @click="deleteCheckin(batch.id)"
+            >
+              删除
             </button>
           </span>
         </div>
@@ -184,7 +223,7 @@ onMounted(loadAll)
       </div>
       <div v-else class="flex flex-col gap-2">
         <!-- 表头 -->
-        <div class="grid grid-cols-[100px_80px_80px_80px_1fr_100px] gap-3 px-4 py-2 text-[11px] text-text-light font-medium">
+        <div class="grid grid-cols-[100px_80px_80px_80px_1fr_120px] gap-3 px-4 py-2 text-[11px] text-text-light font-medium">
           <span>生成时间</span>
           <span class="text-center">年月</span>
           <span class="text-center">记录数</span>
@@ -196,7 +235,7 @@ onMounted(loadAll)
         <div
           v-for="analysis in monthlyAnalyses"
           :key="analysis.id"
-          class="grid grid-cols-[100px_80px_80px_80px_1fr_100px] gap-3 items-center px-4 py-3 bg-card-bg border border-border/70 rounded-xl text-[13px] hover:border-accent/30 transition-colors"
+          class="grid grid-cols-[100px_80px_80px_80px_1fr_120px] gap-3 items-center px-4 py-3 bg-card-bg border border-border/70 rounded-xl text-[13px] hover:border-accent/30 transition-colors"
         >
           <span class="text-text-body text-[12px]">{{ formatDateTime(analysis.created_at) }}</span>
           <span class="text-center font-medium text-text-heading">
@@ -215,10 +254,16 @@ onMounted(loadAll)
           </div>
           <span class="text-center">
             <button
-              class="text-[12px] text-accent hover:text-accent-dark border border-accent/30 px-2.5 py-1 rounded-lg hover:bg-accent/5 transition-colors"
+              class="text-[12px] text-accent hover:text-accent-dark border border-accent/30 px-2.5 py-1 rounded-lg hover:bg-accent/5 transition-colors mr-1.5"
               @click="downloadMonthly(analysis.id)"
             >
               ↓ 下载
+            </button>
+            <button
+              class="text-[12px] text-red-500 hover:text-red-600 border border-red-200 px-2.5 py-1 rounded-lg hover:bg-red-50 transition-colors"
+              @click="deleteMonthly(analysis.id)"
+            >
+              删除
             </button>
           </span>
         </div>
