@@ -105,7 +105,7 @@ async def upload_document(file: UploadFile = File(...),
     doc_id = uuid.uuid4().hex[:12]
     doc_dir = os.path.join(KB_FILES_DIR, doc_id)
     os.makedirs(doc_dir, exist_ok=True)
-    file_path = os.path.join(doc_dir, file.filename)
+    file_path = os.path.join(doc_dir, os.path.basename(file.filename))
 
     with open(file_path, "wb") as f:
         f.write(contents)

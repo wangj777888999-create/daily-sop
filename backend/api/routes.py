@@ -392,7 +392,9 @@ async def upload_file(file: UploadFile = File(...)):
     """上传 Excel/CSV 文件"""
     # 验证文件类型
     allowed_extensions = {".xlsx", ".xls", ".csv"}
-    filename = file.filename
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="文件名不能为空")
+    filename = os.path.basename(file.filename)
     ext = os.path.splitext(filename)[1].lower()
 
     if ext not in allowed_extensions:

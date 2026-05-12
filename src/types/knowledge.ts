@@ -51,7 +51,7 @@ export interface SearchResult {
 export interface RAGRequest {
   prompt: string
   doc_ids?: string[]
-  style: 'policy' | 'report' | 'general'
+  style: 'policy' | 'report' | 'polish' | 'general'
   top_k: number
 }
 

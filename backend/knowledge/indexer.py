@@ -31,7 +31,8 @@ class BM25Index:
         import jieba
         tokens = list(jieba.cut(query))
         raw_scores = self._index.get_scores(tokens)
-        max_score = max(raw_scores) if max(raw_scores) > 0 else 1
+        max_score = float(max(raw_scores))
+        max_score = max_score if max_score > 0 else 1
 
         results = []
         for chunk, raw in zip(self._chunks, raw_scores):
