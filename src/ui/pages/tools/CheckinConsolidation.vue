@@ -22,9 +22,10 @@ interface CheckinRecord {
   actual_count: number
   expected_count: number
   confirmed_revenue: number
+  remark: string
 }
 
-const STATUS_OPTIONS = ['在岗', '补签', '未签到', '请假']
+const STATUS_OPTIONS = ['已到', '未到', '请假']
 
 const step = ref<Step>('select')
 const year = ref(new Date().getFullYear())
@@ -40,32 +41,59 @@ const history = ref<any[]>([])
 
 const API = '/api/tools/checkin-consolidation'
 
-// Add makeup form
-const showAddForm = ref(false)
-const addFormCoach = ref('')
-const newRecord = ref<Record<string, any>>({})
-
-const groupedByCoach = computed(() => {
-  const groups: Record<string, CheckinRecord[]> = {}
-  for (const r of records.value) {
-    const key = r.coach_name || '未知教练'
-    if (!groups[key]) groups[key] = []
-    groups[key].push(r)
-  }
-  return groups
-})
+// ── 筛选状态 ──
+const filterCoach = ref('')
+const filterSchool = ref('')
+const filterCourse = ref('')
+const filterStatus = ref('')
 
 const monthOptions = Array.from({ length: 12 }, (_, i) => ({
   value: i + 1,
   label: `${i + 1}月`,
 }))
 
-function statusClass(status: string) {
-  if (status === '在岗') return 'text-green-700 bg-green-50 border-green-200'
-  if (status === '补签') return 'text-blue-700 bg-blue-50 border-blue-200'
-  if (status === '未签到') return 'text-red-700 bg-red-50 border-red-200'
-  if (status === '请假') return 'text-yellow-700 bg-yellow-50 border-yellow-200'
-  return 'text-text-body bg-white border-border'
+// ── 旧状态 → 新状态映射 ──
+function normalizeStatus(s: string): string {
+  if (s === '在岗' || s === '补签') return '已到'
+  if (s === '未签到') return '未到'
+  return s
+}
+
+// ── 筛选选项 ──
+const coachOptions = computed(() => [...new Set(records.value.map(r => r.coach_name).filter(Boolean))].sort())
+const schoolOptions = computed(() => [...new Set(records.value.map(r => r.school_name).filter(Boolean))].sort())
+const courseOptions = computed(() => [...new Set(records.value.map(r => r.course_name).filter(Boolean))].sort())
+
+// ── 筛选后记录 ──
+const filteredRecords = computed(() => records.value.filter(r => {
+  if (filterCoach.value && r.coach_name !== filterCoach.value) return false
+  if (filterSchool.value && r.school_name !== filterSchool.value) return false
+  if (filterCourse.value && r.course_name !== filterCourse.value) return false
+  if (filterStatus.value && r.sign_status !== filterStatus.value) return false
+  return true
+}))
+
+const hasFilter = computed(() =>
+  !!(filterCoach.value || filterSchool.value || filterCourse.value || filterStatus.value)
+)
+
+// ── 状态统计 ──
+const statusSummary = computed(() => {
+  const counts: Record<string, number> = {}
+  for (const r of records.value) {
+    counts[r.sign_status] = (counts[r.sign_status] || 0) + 1
+  }
+  return counts
+})
+
+// ── 有备注的记录数 ──
+const remarkCount = computed(() => records.value.filter(r => r.remark?.trim()).length)
+
+function statusStyle(status: string): string {
+  if (status === '已到') return 'color:#166534; background:#f0fdf4; border-color:#bbf7d0;'
+  if (status === '未到') return 'color:#991b1b; background:#fef2f2; border-color:#fecaca;'
+  if (status === '请假') return 'color:#92400e; background:#fffbeb; border-color:#fde68a;'
+  return 'color:#3D3530; background:#fff; border-color:#d1cdc9;'
 }
 
 async function loadRecords() {
@@ -82,7 +110,12 @@ async function loadRecords() {
       throw new Error(err.detail || '加载失败')
     }
     const data = await res.json()
-    records.value = data.records
+    records.value = data.records.map((r: any) => ({
+      ...r,
+      sign_status: normalizeStatus(r.sign_status),
+      remark: r.remark ?? '',
+    }))
+    clearFilters()
 
     if (data.from_consolidation) {
       consolidationId.value = data.consolidation_id
@@ -103,47 +136,11 @@ async function loadRecords() {
   }
 }
 
-function updateStatus(record: CheckinRecord, newStatus: string) {
-  record.sign_status = newStatus
-}
-
-function deleteRecord(rowId: number) {
-  records.value = records.value.filter(r => r._row_id !== rowId)
-}
-
-function openAddForm(coachName: string) {
-  addFormCoach.value = coachName
-  // Try to find existing info for this coach to pre-fill
-  const existing = records.value.find(r => r.coach_name === coachName)
-  newRecord.value = {
-    check_date: `${year.value}-${String(month.value).padStart(2, '0')}-`,
-    department: existing?.department || '',
-    school_name: existing?.school_name || '',
-    course_type: existing?.course_type || '',
-    course_name: '',
-    coach_name: coachName,
-    course_date: '',
-    start_time: '',
-    end_time: '',
-    sign_in_time: '',
-    sign_out_time: '',
-    sign_status: '补签',
-    actual_count: 0,
-    expected_count: 0,
-    confirmed_revenue: 0,
-  }
-  showAddForm.value = true
-}
-
-let nextRowId = 10000
-function addRecord() {
-  if (!newRecord.value.coach_name || !newRecord.value.check_date) {
-    errorMsg.value = '教练姓名和签到日期为必填项'
-    return
-  }
-  records.value.push({ ...newRecord.value, _row_id: nextRowId++ } as CheckinRecord)
-  showAddForm.value = false
-  errorMsg.value = ''
+function clearFilters() {
+  filterCoach.value = ''
+  filterSchool.value = ''
+  filterCourse.value = ''
+  filterStatus.value = ''
 }
 
 async function saveDraft() {
@@ -151,10 +148,7 @@ async function saveDraft() {
   errorMsg.value = ''
   successMsg.value = ''
   try {
-    const cleanRecords = records.value.map(r => {
-      const { _row_id, ...rest } = r
-      return rest
-    })
+    const cleanRecords = records.value.map(({ _row_id, ...rest }) => rest)
     const fd = new FormData()
     fd.append('year', String(year.value))
     fd.append('month', String(month.value))
@@ -178,7 +172,6 @@ async function saveDraft() {
 
 async function confirmConsolidation() {
   if (!consolidationId.value) {
-    // Save first
     await saveDraft()
     if (!consolidationId.value) return
   }
@@ -256,6 +249,7 @@ function reset() {
   consolidationStatus.value = ''
   errorMsg.value = ''
   successMsg.value = ''
+  clearFilters()
 }
 
 function formatDate(s: string) {
@@ -266,21 +260,22 @@ loadHistory()
 </script>
 
 <template>
-  <div class="p-6 max-w-6xl mx-auto">
+  <div class="p-6 max-w-7xl mx-auto">
     <Card>
-      <div class="flex flex-col gap-6">
-        <!-- Header -->
+      <div class="flex flex-col gap-5">
+
+        <!-- ── Header ── -->
         <div class="flex items-center justify-between">
           <div>
-            <h2 class="text-lg font-bold text-text-heading">签到数据整合</h2>
-            <p class="text-sm text-text-light mt-1">月度签到数据校对、补签、确认，作为月度分析的数据源</p>
+            <h2 class="text-lg font-bold" style="color:#3D3530;">签到数据整合</h2>
+            <p class="text-sm mt-1" style="color:#9C8E82;">逐条核查月度签到记录，修改签到状态与备注，确认后作为月度分析数据源</p>
           </div>
           <Button v-if="step !== 'select'" variant="secondary" size="small" @click="reset">
             重新选择
           </Button>
         </div>
 
-        <!-- Messages -->
+        <!-- ── Messages ── -->
         <div v-if="errorMsg" class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
           {{ errorMsg }}
         </div>
@@ -288,15 +283,15 @@ loadHistory()
           {{ successMsg }}
         </div>
 
-        <!-- Step 1: Select month -->
+        <!-- ── Step 1: Select month ── -->
         <div v-if="step === 'select'" class="flex flex-col gap-4">
           <div class="flex items-center gap-3">
-            <label class="text-sm text-text-body">选择月份：</label>
-            <select v-model="year" class="border border-border rounded-lg px-3 py-1.5 text-sm">
+            <label class="text-sm" style="color:#6B5F52;">选择月份：</label>
+            <select v-model.number="year" class="border rounded-lg px-3 py-1.5 text-sm" style="border-color:#d1cdc9;">
               <option :value="2025">2025年</option>
               <option :value="2026">2026年</option>
             </select>
-            <select v-model="month" class="border border-border rounded-lg px-3 py-1.5 text-sm">
+            <select v-model.number="month" class="border rounded-lg px-3 py-1.5 text-sm" style="border-color:#d1cdc9;">
               <option v-for="opt in monthOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
           </div>
@@ -305,167 +300,196 @@ loadHistory()
           </Button>
         </div>
 
-        <!-- Step 2: Edit -->
+        <!-- ── Step 2: Edit ── -->
         <div v-if="step === 'edit'" class="flex flex-col gap-4">
-          <!-- Stats bar -->
-          <div class="flex items-center justify-between bg-page-bg rounded-lg px-4 py-2.5">
-            <span class="text-sm font-medium" style="color:#3D3530;">
-              {{ year }}年{{ month }}月 · 共 {{ records.length }} 条记录 · {{ Object.keys(groupedByCoach).length }} 位教练
-            </span>
-            <div class="flex items-center gap-2">
-              <span v-if="consolidationStatus === 'draft'" class="text-xs px-2 py-0.5 rounded-full bg-yellow-50 text-yellow-700 border border-yellow-200">草稿</span>
-              <span v-if="consolidationStatus === 'confirmed'" class="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">已确认</span>
-            </div>
-          </div>
 
-          <!-- Column header row (fixed, outside scroll) -->
-          <div class="grid gap-2 px-4 py-1.5 rounded-lg bg-sidebar-bg text-xs font-semibold" style="color:#6B5F52; grid-template-columns: 100px 90px 1fr 1fr 100px 60px;">
-            <span>签到日期</span>
-            <span>部门</span>
-            <span>学校</span>
-            <span>课程</span>
-            <span class="text-center">签到状态</span>
-            <span class="text-center">操作</span>
-          </div>
-
-          <!-- Coach groups -->
-          <div class="flex flex-col gap-2 max-h-[58vh] overflow-y-auto pr-0.5">
-            <div v-for="(group, coachName) in groupedByCoach" :key="coachName" class="rounded-xl border border-border overflow-hidden">
-              <!-- Coach header -->
-              <div class="flex items-center justify-between px-4 py-2 bg-page-bg border-b border-border sticky top-0 z-10">
-                <span class="text-sm font-semibold" style="color:#3D3530;">
-                  {{ coachName }}
-                  <span class="text-xs font-normal ml-1" style="color:#9C8E82;">{{ group.length }} 条</span>
+          <!-- 概览栏 -->
+          <div class="flex items-center justify-between rounded-lg px-4 py-2.5" style="background:#f5f2ef;">
+            <div class="flex items-center gap-4 flex-wrap">
+              <span class="text-sm font-semibold" style="color:#3D3530;">{{ year }}年{{ month }}月</span>
+              <span class="text-xs" style="color:#9C8E82;">共 {{ records.length }} 条 · {{ coachOptions.length }} 位教练</span>
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span v-for="(cnt, st) in statusSummary" :key="st"
+                  class="text-[11px] px-2 py-0.5 rounded-full border"
+                  :style="statusStyle(st as string)">
+                  {{ st }} {{ cnt }}
                 </span>
-                <button
-                  class="text-xs px-2.5 py-1 rounded-lg border transition-colors"
-                  style="color:#5B8F7A; border-color:#5B8F7A40; background:#5B8F7A0d;"
-                  @click="openAddForm(coachName as string)"
-                >+ 补签</button>
+                <span v-if="remarkCount > 0"
+                  class="text-[11px] px-2 py-0.5 rounded-full border"
+                  style="color:#5B4FCF; background:#f5f3ff; border-color:#c4b5fd;">
+                  有备注 {{ remarkCount }}
+                </span>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span v-if="consolidationStatus === 'draft'"
+                class="text-xs px-2 py-0.5 rounded-full border"
+                style="color:#92400e; background:#fffbeb; border-color:#fde68a;">草稿</span>
+              <span v-if="consolidationStatus === 'confirmed'"
+                class="text-xs px-2 py-0.5 rounded-full border"
+                style="color:#166534; background:#f0fdf4; border-color:#bbf7d0;">已确认</span>
+            </div>
+          </div>
+
+          <!-- 筛选栏 -->
+          <div class="flex flex-wrap items-center gap-3 rounded-xl p-3 border" style="border-color:#e8e4e0; background:#faf9f7;">
+            <span class="text-xs font-medium" style="color:#6B5F52;">筛选：</span>
+            <select v-model="filterCoach" class="border rounded-lg px-2.5 py-1.5 text-xs" style="border-color:#d1cdc9; min-width:100px;">
+              <option value="">全部教练</option>
+              <option v-for="c in coachOptions" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <select v-model="filterSchool" class="border rounded-lg px-2.5 py-1.5 text-xs" style="border-color:#d1cdc9; min-width:130px;">
+              <option value="">全部学校</option>
+              <option v-for="s in schoolOptions" :key="s" :value="s">{{ s }}</option>
+            </select>
+            <select v-model="filterCourse" class="border rounded-lg px-2.5 py-1.5 text-xs" style="border-color:#d1cdc9; min-width:130px;">
+              <option value="">全部课程</option>
+              <option v-for="c in courseOptions" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <select v-model="filterStatus" class="border rounded-lg px-2.5 py-1.5 text-xs" style="border-color:#d1cdc9; min-width:100px;">
+              <option value="">全部状态</option>
+              <option v-for="s in STATUS_OPTIONS" :key="s" :value="s">{{ s }}</option>
+            </select>
+            <button v-if="hasFilter" class="text-xs underline" style="color:#9C8E82;" @click="clearFilters">清除筛选</button>
+            <span class="ml-auto text-xs" style="color:#9C8E82;">
+              显示 {{ filteredRecords.length }} / {{ records.length }} 条
+            </span>
+          </div>
+
+          <!-- 表格 -->
+          <div class="rounded-xl border overflow-hidden" style="border-color:#e8e4e0;">
+            <!-- 横向滚动容器 -->
+            <div class="overflow-x-auto">
+              <!-- 表头 -->
+              <div class="grid text-xs font-semibold px-3 py-2"
+                style="grid-template-columns: 96px minmax(60px,0.6fr) minmax(60px,0.6fr) minmax(150px,2fr) minmax(150px,2fr) 84px minmax(150px,1.8fr); min-width:840px; background:#f5f2ef; color:#6B5F52; border-bottom:1px solid #e8e4e0;">
+                <span>签到日期</span>
+                <span>教练</span>
+                <span>部门</span>
+                <span>学校</span>
+                <span>课程名称</span>
+                <span class="text-center">签到状态</span>
+                <span>备注</span>
               </div>
 
-              <!-- Records -->
-              <div
-                v-for="record in group"
-                :key="record._row_id"
-                class="grid gap-2 px-4 py-2.5 border-b border-border/50 last:border-b-0 hover:bg-page-bg/60 transition-colors items-center"
-                style="grid-template-columns: 100px 90px 1fr 1fr 100px 60px;"
-              >
-                <span class="text-xs" style="color:#3D3530;">{{ record.check_date || '—' }}</span>
-                <span class="text-xs truncate" style="color:#6B5F52;" :title="record.department">{{ record.department || '—' }}</span>
-                <span class="text-xs truncate" style="color:#6B5F52;" :title="record.school_name">{{ record.school_name || '—' }}</span>
-                <span class="text-xs truncate" style="color:#6B5F52;" :title="record.course_name">{{ record.course_name || '—' }}</span>
-                <div class="flex justify-center">
-                  <select
-                    :value="record.sign_status"
-                    @change="updateStatus(record, ($event.target as HTMLSelectElement).value)"
-                    class="text-xs border rounded-lg px-2 py-0.5 w-full max-w-[96px] cursor-pointer"
-                    :class="statusClass(record.sign_status)"
-                  >
-                    <option v-for="opt in STATUS_OPTIONS" :key="opt" :value="opt">{{ opt }}</option>
-                  </select>
+              <!-- 数据行 -->
+              <div class="overflow-y-auto" style="max-height:56vh;">
+                <div v-if="filteredRecords.length === 0"
+                  class="py-12 text-center text-sm" style="color:#9C8E82; min-width:780px;">
+                  {{ hasFilter ? '没有符合筛选条件的记录' : '暂无数据' }}
                 </div>
-                <div class="flex justify-center">
-                  <button class="text-xs hover:text-red-600 transition-colors" style="color:#C17F3A;" @click="deleteRecord(record._row_id)">删除</button>
+
+                <div
+                  v-for="record in filteredRecords"
+                  :key="record._row_id"
+                  class="grid items-center px-3 text-xs"
+                  style="grid-template-columns: 96px minmax(60px,0.6fr) minmax(60px,0.6fr) minmax(150px,2fr) minmax(150px,2fr) 84px minmax(150px,1.8fr); min-width:840px; border-bottom:1px solid #f0ece8; min-height:38px;"
+                  onmouseover="this.style.background='#faf9f7'" onmouseout="this.style.background=''">
+
+                  <span style="color:#6B5F52;">{{ record.check_date || '—' }}</span>
+                  <span class="font-medium truncate" :title="record.coach_name">{{ record.coach_name || '—' }}</span>
+                  <span class="truncate" style="color:#9C8E82;" :title="record.department">{{ record.department || '—' }}</span>
+                  <span class="truncate" style="color:#6B5F52;" :title="record.school_name">{{ record.school_name || '—' }}</span>
+                  <span class="truncate" style="color:#6B5F52;" :title="record.course_name">{{ record.course_name || '—' }}</span>
+
+                  <!-- 签到状态 -->
+                  <div class="flex justify-center">
+                    <select
+                      :value="record.sign_status"
+                      @change="record.sign_status = ($event.target as HTMLSelectElement).value"
+                      class="text-xs border rounded-lg px-1.5 py-0.5 cursor-pointer w-full max-w-[80px]"
+                      :style="statusStyle(record.sign_status)">
+                      <option v-for="opt in STATUS_OPTIONS" :key="opt" :value="opt">{{ opt }}</option>
+                    </select>
+                  </div>
+
+                  <!-- 备注 -->
+                  <input
+                    v-model="record.remark"
+                    class="text-xs border rounded px-2 py-0.5 w-full"
+                    :style="record.remark?.trim()
+                      ? 'border-color:#c4b5fd; background:#f5f3ff; color:#4c1d95;'
+                      : 'border-color:transparent; background:transparent; color:#6B5F52;'"
+                    placeholder="点击添加备注…"
+                  />
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Action bar -->
-          <div class="flex items-center gap-3 pt-2">
-            <Button variant="secondary" :loading="loading" @click="saveDraft">保存草稿</Button>
-            <Button variant="primary" :loading="loading" @click="confirmConsolidation">确认整合</Button>
+          <!-- 操作栏 -->
+          <div class="flex items-center justify-between pt-1">
+            <div class="flex items-center gap-3">
+              <Button variant="secondary" :loading="loading" @click="saveDraft">保存草稿</Button>
+              <Button variant="primary" :loading="loading" @click="confirmConsolidation">确认整合并提交</Button>
+            </div>
+            <span class="text-xs" style="color:#9C8E82;">确认后将作为本月校内月度分析的签到数据源</span>
           </div>
         </div>
 
-        <!-- Step 3: Confirmed -->
+        <!-- ── Step 3: Confirmed ── -->
         <div v-if="step === 'confirmed'" class="flex flex-col gap-4">
-          <div class="bg-green-50 border border-green-200 rounded-lg px-4 py-4 text-center">
-            <p class="text-green-700 font-medium">{{ year }}年{{ month }}月 签到数据已确认整合</p>
-            <p class="text-sm text-green-600 mt-1">共 {{ records.length }} 条记录，校内月度分析将使用此数据</p>
+          <div class="rounded-xl border px-5 py-5 text-center" style="background:#f0fdf4; border-color:#bbf7d0;">
+            <p class="font-semibold" style="color:#166534;">{{ year }}年{{ month }}月 签到数据已确认整合</p>
+            <p class="text-sm mt-1.5" style="color:#15803d;">
+              共 {{ records.length }} 条记录 · {{ coachOptions.length }} 位教练
+            </p>
+            <div class="flex justify-center gap-2 mt-3 flex-wrap">
+              <span v-for="(cnt, st) in statusSummary" :key="st"
+                class="text-[11px] px-3 py-1 rounded-full border"
+                :style="statusStyle(st as string)">
+                {{ st }} {{ cnt }}
+              </span>
+              <span v-if="remarkCount > 0"
+                class="text-[11px] px-3 py-1 rounded-full border"
+                style="color:#5B4FCF; background:#f5f3ff; border-color:#c4b5fd;">
+                有备注 {{ remarkCount }}
+              </span>
+            </div>
           </div>
           <div class="flex items-center gap-3">
             <Button variant="primary" @click="downloadResult">下载整合 Excel</Button>
-            <Button variant="secondary" @click="unconfirmConsolidation">取消确认，重新编辑</Button>
+            <Button variant="secondary" :loading="loading" @click="unconfirmConsolidation">取消确认，重新编辑</Button>
           </div>
         </div>
 
-        <!-- Add makeup modal -->
-        <div v-if="showAddForm" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50" @click.self="showAddForm = false">
-          <div class="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
-            <h3 class="text-sm font-bold text-text-heading mb-4">添加补签记录 — {{ addFormCoach }}</h3>
-            <div class="flex flex-col gap-3">
-              <div class="flex items-center gap-2">
-                <label class="text-xs text-text-light w-20 text-right">签到日期 *</label>
-                <input v-model="newRecord.check_date" type="date" class="border border-border rounded px-2 py-1 text-sm flex-1" />
-              </div>
-              <div class="flex items-center gap-2">
-                <label class="text-xs text-text-light w-20 text-right">部门</label>
-                <input v-model="newRecord.department" class="border border-border rounded px-2 py-1 text-sm flex-1" />
-              </div>
-              <div class="flex items-center gap-2">
-                <label class="text-xs text-text-light w-20 text-right">学校 *</label>
-                <input v-model="newRecord.school_name" class="border border-border rounded px-2 py-1 text-sm flex-1" />
-              </div>
-              <div class="flex items-center gap-2">
-                <label class="text-xs text-text-light w-20 text-right">课程名称</label>
-                <input v-model="newRecord.course_name" class="border border-border rounded px-2 py-1 text-sm flex-1" />
-              </div>
-              <div class="flex items-center gap-2">
-                <label class="text-xs text-text-light w-20 text-right">课程日期</label>
-                <input v-model="newRecord.course_date" type="date" class="border border-border rounded px-2 py-1 text-sm flex-1" />
-              </div>
-              <div class="flex items-center gap-2">
-                <label class="text-xs text-text-light w-20 text-right">开始时间</label>
-                <input v-model="newRecord.start_time" type="time" class="border border-border rounded px-2 py-1 text-sm flex-1" />
-              </div>
-              <div class="flex items-center gap-2">
-                <label class="text-xs text-text-light w-20 text-right">结束时间</label>
-                <input v-model="newRecord.end_time" type="time" class="border border-border rounded px-2 py-1 text-sm flex-1" />
-              </div>
-            </div>
-            <div class="flex items-center gap-3 mt-5">
-              <Button variant="primary" size="small" @click="addRecord">确认添加</Button>
-              <Button variant="secondary" size="small" @click="showAddForm = false">取消</Button>
-            </div>
-          </div>
-        </div>
-
-        <!-- History -->
-        <div v-if="history.length > 0 && step === 'select'" class="border-t border-border pt-4">
-          <h3 class="text-sm font-medium text-text-heading mb-3">历史整合记录</h3>
-          <div class="overflow-auto">
+        <!-- ── 历史整合记录 ── -->
+        <div v-if="history.length > 0 && step === 'select'" class="border-t pt-4" style="border-color:#e8e4e0;">
+          <h3 class="text-sm font-medium mb-3" style="color:#3D3530;">历史整合记录</h3>
+          <div class="overflow-auto rounded-xl border" style="border-color:#e8e4e0;">
             <table class="w-full text-xs">
-              <thead class="bg-page-bg">
+              <thead style="background:#f5f2ef;">
                 <tr>
-                  <th class="px-3 py-2 text-left font-medium text-text-light">年月</th>
-                  <th class="px-3 py-2 text-center font-medium text-text-light">记录数</th>
-                  <th class="px-3 py-2 text-center font-medium text-text-light">状态</th>
-                  <th class="px-3 py-2 text-left font-medium text-text-light">更新时间</th>
-                  <th class="px-3 py-2 text-center font-medium text-text-light">操作</th>
+                  <th class="px-3 py-2 text-left font-medium" style="color:#6B5F52;">年月</th>
+                  <th class="px-3 py-2 text-center font-medium" style="color:#6B5F52;">记录数</th>
+                  <th class="px-3 py-2 text-center font-medium" style="color:#6B5F52;">状态</th>
+                  <th class="px-3 py-2 text-left font-medium" style="color:#6B5F52;">更新时间</th>
+                  <th class="px-3 py-2 text-center font-medium" style="color:#6B5F52;">操作</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="h in history" :key="h.id" class="border-t border-border hover:bg-page-bg">
-                  <td class="px-3 py-2 font-medium text-text-heading">{{ h.year }}/{{ String(h.month).padStart(2, '0') }}</td>
-                  <td class="px-3 py-2 text-center">{{ h.record_count }}</td>
+                <tr v-for="h in history" :key="h.id" class="border-t hover:bg-stone-50" style="border-color:#f0ece8;">
+                  <td class="px-3 py-2 font-medium" style="color:#3D3530;">{{ h.year }}/{{ String(h.month).padStart(2, '0') }}</td>
+                  <td class="px-3 py-2 text-center" style="color:#6B5F52;">{{ h.record_count }}</td>
                   <td class="px-3 py-2 text-center">
-                    <span class="text-[11px] px-2 py-0.5 rounded-full font-medium"
-                      :class="h.status === 'confirmed' ? 'bg-green-50 text-green-600' : 'bg-yellow-50 text-yellow-600'">
+                    <span class="text-[11px] px-2 py-0.5 rounded-full font-medium border"
+                      :style="h.status === 'confirmed'
+                        ? 'color:#166534; background:#f0fdf4; border-color:#bbf7d0;'
+                        : 'color:#92400e; background:#fffbeb; border-color:#fde68a;'">
                       {{ h.status === 'confirmed' ? '已确认' : '草稿' }}
                     </span>
                   </td>
-                  <td class="px-3 py-2">{{ formatDate(h.updated_at) }}</td>
+                  <td class="px-3 py-2" style="color:#9C8E82;">{{ formatDate(h.updated_at) }}</td>
                   <td class="px-3 py-2 text-center">
-                    <button class="text-accent hover:underline text-xs mr-2" @click="downloadHistoryItem(h.id)">下载</button>
-                    <button class="text-red-500 hover:underline text-xs" @click="deleteHistoryItem(h.id)">删除</button>
+                    <button class="text-xs mr-2 hover:underline" style="color:#5B8F7A;" @click="downloadHistoryItem(h.id)">下载</button>
+                    <button class="text-xs hover:underline" style="color:#ef4444;" @click="deleteHistoryItem(h.id)">删除</button>
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
+
       </div>
     </Card>
   </div>

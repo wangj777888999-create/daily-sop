@@ -3,9 +3,7 @@
     "id": "5d3f2d33-6e14-4441-850d-db9c767e9bf0",
     "sop_id": "6b9f89c1-469b-4d73-a45e-6118252b2ef8",
     "status": "failed",
-    "input_files": [
-      "/Users/wangjun/Desktop/ai_analyst_v2/backend/../data/uploads/null"
-    ],
+    "input_files": [],
     "output_file": null,
     "error_message": "Traceback (most recent call last):\n  File \"/var/folders/th/wfyyd6492r1c00x5_6q6dn080000gn/T/sandbox_execution/tmpq3wu3t5q.py\", line 4, in <module>\n    df1 = pd.read_excel('new_sales.xlsx')\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/io/excel/_base.py\", line 495, in read_excel\n    io = ExcelFile(\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/io/excel/_base.py\", line 1550, in __init__\n    ext = inspect_excel_format(\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/io/excel/_base.py\", line 1402, in inspect_excel_format\n    with get_handle(\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/io/common.py\", line 882, in get_handle\n    handle = open(handle, ioargs.mode)\nFileNotFoundError: [Errno 2] No such file or directory: 'new_sales.xlsx'\n",
     "created_at": "2026-04-24T16:57:42.568087",
@@ -15,9 +13,7 @@
     "id": "d4fe81e6-922d-4c03-ad82-d2d8649cc8d6",
     "sop_id": "8a1dd2ab-3415-423b-aa4a-fca590e8423a",
     "status": "failed",
-    "input_files": [
-      "/Users/wangjun/Desktop/ai_analyst_v2/backend/../data/uploads/null"
-    ],
+    "input_files": [],
     "output_file": null,
     "error_message": "Traceback (most recent call last):\n  File \"/var/folders/th/wfyyd6492r1c00x5_6q6dn080000gn/T/sandbox_execution/tmpzm__grge.py\", line 4, in <module>\n    df1 = pd.read_excel('test.xlsx')\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/io/excel/_base.py\", line 495, in read_excel\n    io = ExcelFile(\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/io/excel/_base.py\", line 1550, in __init__\n    ext = inspect_excel_format(\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/io/excel/_base.py\", line 1402, in inspect_excel_format\n    with get_handle(\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/io/common.py\", line 882, in get_handle\n    handle = open(handle, ioargs.mode)\nFileNotFoundError: [Errno 2] No such file or directory: 'test.xlsx'\n",
     "created_at": "2026-04-24T16:58:05.037267",
@@ -43,7 +39,7 @@
       "/Users/wangjun/Desktop/ai_analyst_v2/backend/../data/uploads/test_data.xlsx"
     ],
     "output_file": null,
-    "error_message": "Traceback (most recent call last):\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/compat/_optional.py\", line 135, in import_optional_dependency\n    module = importlib.import_module(name)\n  File \"/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/importlib/__init__.py\", line 127, in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n  File \"<frozen importlib._bootstrap>\", line 1030, in _gcd_import\n  File \"<frozen importlib._bootstrap>\", line 1007, in _find_and_load\n  File \"<frozen importlib._bootstrap>\", line 984, in _find_and_load_unlocked\nModuleNotFoundError: No module named 'openpyxl'\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/var/folders/th/wfyyd6492r1c00x5_6q6dn080000gn/T/sandbox_execution/tmpda1p57wd.py\", line 4, in <module>\n    df1 = pd.read_excel('/Users/wangjun/Desktop/ai_analyst_v2/backend/../data/uploads/test_data.xlsx')\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/io/excel/_base.py\", line 495, in read_excel\n    io = ExcelFile(\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/io/excel/_base.py\", line 1567, in __init__\n    self._reader = self._engines[engine](\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/io/excel/_openpyxl.py\", line 552, in __init__\n    import_optional_dependency(\"openpyxl\")\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/compat/_optional.py\", line 138, in import_optional_dependency\n    raise ImportError(msg)\nImportError: Missing optional dependency 'openpyxl'.  Use pip or conda to install openpyxl.\n",
+    "error_message": "Traceback (most recent call last):\n  File \"/var/folders/th/wfyyd6492r1c00x5_6q6dn080000gn/T/sandbox_execution/tmpda1p57wd.py\", line 4, in <module>\n    df1 = pd.read_excel('/Users/wangjun/Desktop/ai_analyst_v2/backend/../data/uploads/test_data.xlsx')\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/io/excel/_base.py\", line 495, in read_excel\n    io = ExcelFile(\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/io/excel/_base.py\", line 1567, in __init__\n    self._reader = self._engines[engine](\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/io/excel/_openpyxl.py\", line 552, in __init__\n    import_optional_dependency(\"openpyxl\")\n  File \"/Users/wangjun/Library/Python/3.9/lib/python/site-packages/pandas/compat/_optional.py\", line 138, in import_optional_dependency\n    raise ImportError(msg)\nImportError: Missing optional dependency 'openpyxl'.  Use pip or conda to install openpyxl.\n",
     "created_at": "2026-04-24T17:04:37.453636",
     "completed_at": "2026-04-24T17:04:37.981840"
   }

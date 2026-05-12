@@ -273,11 +273,6 @@ async def checkin_consolidation_save(
     records: str = Form(...),
 ):
     parsed_records = json.loads(records)
-    # 补签归一化为在岗
-    for r in parsed_records:
-        if r.get("sign_status") == "补签":
-            r["sign_status"] = "在岗"
-
     result = save_consolidation_data(year, month, parsed_records)
     consolidation_id = save_consolidation(
         year, month, result["record_count"], result["filename"], status="draft"

@@ -67,21 +67,25 @@ def coach_checkin_analysis(att_df: pd.DataFrame) -> pd.DataFrame:
         .add_suffix('次数')
     )
     checkin_stats['总计次数'] = checkin_stats.sum(axis=1)
-    checkin_stats['在岗次数'] = checkin_stats.get('在岗次数', 0)
+    # 兼容新状态"已到"与旧状态"在岗"
+    present_count = checkin_stats.get('已到次数', 0) + checkin_stats.get('在岗次数', 0)
+    checkin_stats['在岗次数'] = present_count
     checkin_stats['教练个人签到率(%)'] = (
-        (checkin_stats['在岗次数'] / checkin_stats['总计次数'] * 100)
+        (present_count / checkin_stats['总计次数'] * 100)
         .round(2).fillna(0)
     )
+
+    def _is_present(s): return s in ('已到', '在岗')
 
     # 学校签到率
     att_df['学校主名称'] = att_df['学校名称'].apply(extract_school_main)
     school_rate = att_df.groupby(['部门', '学校主名称']).apply(
-        lambda x: (x['签到状态'] == '在岗').sum() / len(x) * 100 if len(x) > 0 else 0
+        lambda x: x['签到状态'].apply(_is_present).sum() / len(x) * 100 if len(x) > 0 else 0
     ).round(2).rename('学校签到率(%)')
 
     # 部门签到率
     dept_rate = att_df.groupby('部门').apply(
-        lambda x: (x['签到状态'] == '在岗').sum() / len(x) * 100 if len(x) > 0 else 0
+        lambda x: x['签到状态'].apply(_is_present).sum() / len(x) * 100 if len(x) > 0 else 0
     ).round(2).rename('部门签到率(%)')
 
     result = checkin_stats.reset_index()

@@ -69,6 +69,7 @@ def export_excel(records: List[Dict]) -> bytes:
         ("actual_count", "实际上课人次"),
         ("expected_count", "课程应到人次"),
         ("confirmed_revenue", "确认收入"),
+        ("remark", "备注"),
     ]
 
     headers = [h for _, h in col_map]
