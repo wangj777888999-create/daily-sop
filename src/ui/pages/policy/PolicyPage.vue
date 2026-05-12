@@ -63,6 +63,11 @@ async function handleGenerate() {
 
 const wordCount = computed(() => generatedContent.value.length)
 const sectionCount = computed(() => outline.value.length)
+
+async function copyMarkdown() {
+  if (!generatedContent.value) return
+  await navigator.clipboard.writeText(generatedContent.value)
+}
 </script>
 
 <template>
@@ -154,7 +159,7 @@ const sectionCount = computed(() => outline.value.length)
         <div class="space-y-1.5">
           <Button variant="secondary" style="width: 100%; justify-content: center; font-size: 11px">导出 Word (.docx)</Button>
           <Button variant="secondary" style="width: 100%; justify-content: center; font-size: 11px">导出 PDF</Button>
-          <Button variant="secondary" style="width: 100%; justify-content: center; font-size: 11px">复制全文 Markdown</Button>
+          <Button variant="secondary" style="width: 100%; justify-content: center; font-size: 11px" @click="copyMarkdown">复制全文 Markdown</Button>
         </div>
       </Card>
 
@@ -206,7 +211,10 @@ const sectionCount = computed(() => outline.value.length)
             </Button>
           </div>
 
-          <div v-if="!kbStore.searchQuery && selectedRefs.length === 0" class="text-[11px] text-text-light text-center py-4">
+          <div v-if="kbStore.documents.length === 0 && selectedRefs.length === 0" class="text-[11px] text-text-light text-center py-4">
+            知识库为空，请先<router-link to="/knowledge" class="text-accent underline">上传文档</router-link>
+          </div>
+          <div v-else-if="!kbStore.searchQuery && selectedRefs.length === 0" class="text-[11px] text-text-light text-center py-4">
             搜索知识库中的文档作为参考
           </div>
         </div>

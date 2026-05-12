@@ -1,4 +1,15 @@
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    # Windows compatibility: fcntl is Unix-only
+    import types
+    fcntl = types.ModuleType("fcntl")
+    fcntl.LOCK_SH = 1
+    fcntl.LOCK_EX = 2
+    fcntl.LOCK_NB = 4
+    def _noop_flock(f, flags):
+        pass
+    fcntl.flock = _noop_flock
 import json
 import os
 from typing import List, Optional

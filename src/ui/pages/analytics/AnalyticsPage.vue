@@ -1,13 +1,37 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import Card from '@/ui/components/common/Card.vue'
 import Button from '@/ui/components/common/Button.vue'
 import Chip from '@/ui/components/common/Chip.vue'
 import MetricCard from '@/ui/components/common/MetricCard.vue'
 import RowTitle from '@/ui/components/common/RowTitle.vue'
 import WBox from '@/ui/components/common/WBox.vue'
+import { useKnowledgeStore } from '@/stores/knowledge'
 
+const kbStore = useKnowledgeStore()
 const viewMode = ref<'charts' | 'chat'>('charts')
+const showKBPicker = ref(false)
+const selectedKBDocIds = ref<string[]>([])
+
+onMounted(async () => {
+  await kbStore.loadDocuments()
+})
+
+const selectedKBDocs = computed(() =>
+  kbStore.documents.filter(d => selectedKBDocIds.value.includes(d.id))
+)
+
+const kbButtonLabel = computed(() =>
+  selectedKBDocIds.value.length > 0
+    ? `知识库 (${selectedKBDocIds.value.length})`
+    : '知识库'
+)
+
+function toggleDoc(docId: string) {
+  const idx = selectedKBDocIds.value.indexOf(docId)
+  if (idx >= 0) selectedKBDocIds.value.splice(idx, 1)
+  else selectedKBDocIds.value.push(docId)
+}
 
 const metrics: Array<{
   label: string
@@ -70,7 +94,49 @@ const quickLabels: string[] = []
             <WBox label="拖拽上传\nExcel / CSV / JSON" class="w-full h-[76px] mb-2" />
             <div class="flex gap-1.5">
               <Button size="small" variant="secondary">数据库</Button>
-              <Button size="small" variant="secondary" @click="$router.push('/knowledge')">知识库</Button>
+              <Button size="small" variant="secondary" @click="showKBPicker = !showKBPicker">{{ kbButtonLabel }}</Button>
+            </div>
+
+            <!-- 知识库文档选择面板 -->
+            <div v-if="showKBPicker" class="mt-2 border border-border rounded-lg bg-page-bg overflow-hidden">
+              <div v-if="kbStore.documents.length === 0" class="p-3 text-[11px] text-text-light text-center">
+                暂无文档，<router-link to="/knowledge" class="text-accent underline">前往知识库上传</router-link>
+              </div>
+              <template v-else>
+                <div class="max-h-[180px] overflow-y-auto">
+                  <label
+                    v-for="doc in kbStore.documents"
+                    :key="doc.id"
+                    class="flex items-center gap-2 px-3 py-1.5 text-[11px] text-text-body hover:bg-accent-light cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="selectedKBDocIds.includes(doc.id)"
+                      @change="toggleDoc(doc.id)"
+                      class="accent-[var(--color-accent)]"
+                    />
+                    <span class="truncate">{{ doc.name }}</span>
+                  </label>
+                </div>
+                <div
+                  v-if="selectedKBDocIds.length > 0"
+                  class="px-3 py-1.5 border-t border-border text-[10px] text-accent text-right"
+                >
+                  确认 {{ selectedKBDocIds.length }} 个
+                </div>
+              </template>
+            </div>
+
+            <!-- 已选知识库文档展示 -->
+            <div v-if="selectedKBDocs.length > 0" class="mt-2 space-y-1">
+              <div
+                v-for="doc in selectedKBDocs"
+                :key="doc.id"
+                class="flex items-center justify-between bg-accent-light rounded px-2 py-1 text-[10px]"
+              >
+                <span class="truncate text-text-body">{{ doc.name }}</span>
+                <span class="cursor-pointer text-text-light ml-1 flex-shrink-0" @click="toggleDoc(doc.id)">✕</span>
+              </div>
             </div>
           </Card>
 
