@@ -308,64 +308,73 @@ loadHistory()
         <!-- Step 2: Edit -->
         <div v-if="step === 'edit'" class="flex flex-col gap-4">
           <!-- Stats bar -->
-          <div class="flex items-center justify-between bg-page-bg rounded-lg px-4 py-2">
-            <span class="text-sm text-text-body">
+          <div class="flex items-center justify-between bg-page-bg rounded-lg px-4 py-2.5">
+            <span class="text-sm font-medium" style="color:#3D3530;">
               {{ year }}年{{ month }}月 · 共 {{ records.length }} 条记录 · {{ Object.keys(groupedByCoach).length }} 位教练
-              <span v-if="consolidationStatus === 'draft'" class="text-yellow-600 ml-2 font-medium">[草稿]</span>
-              <span v-if="consolidationStatus === 'confirmed'" class="text-green-600 ml-2 font-medium">[已确认]</span>
             </span>
+            <div class="flex items-center gap-2">
+              <span v-if="consolidationStatus === 'draft'" class="text-xs px-2 py-0.5 rounded-full bg-yellow-50 text-yellow-700 border border-yellow-200">草稿</span>
+              <span v-if="consolidationStatus === 'confirmed'" class="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">已确认</span>
+            </div>
+          </div>
+
+          <!-- Column header row (fixed, outside scroll) -->
+          <div class="grid gap-2 px-4 py-1.5 rounded-lg bg-sidebar-bg text-xs font-semibold" style="color:#6B5F52; grid-template-columns: 100px 90px 1fr 1fr 100px 60px;">
+            <span>签到日期</span>
+            <span>部门</span>
+            <span>学校</span>
+            <span>课程</span>
+            <span class="text-center">签到状态</span>
+            <span class="text-center">操作</span>
           </div>
 
           <!-- Coach groups -->
-          <div class="flex flex-col gap-3 max-h-[60vh] overflow-auto">
-            <div v-for="(group, coachName) in groupedByCoach" :key="coachName" class="border border-border rounded-lg overflow-hidden">
-              <div class="bg-page-bg px-4 py-2 flex items-center justify-between sticky top-0 z-10">
-                <span class="text-sm font-medium text-text-heading">{{ coachName }} <span class="text-text-light font-normal">({{ group.length }}条)</span></span>
-                <Button variant="secondary" size="small" @click="openAddForm(coachName as string)">
-                  + 补签
-                </Button>
+          <div class="flex flex-col gap-2 max-h-[58vh] overflow-y-auto pr-0.5">
+            <div v-for="(group, coachName) in groupedByCoach" :key="coachName" class="rounded-xl border border-border overflow-hidden">
+              <!-- Coach header -->
+              <div class="flex items-center justify-between px-4 py-2 bg-page-bg border-b border-border sticky top-0 z-10">
+                <span class="text-sm font-semibold" style="color:#3D3530;">
+                  {{ coachName }}
+                  <span class="text-xs font-normal ml-1" style="color:#9C8E82;">{{ group.length }} 条</span>
+                </span>
+                <button
+                  class="text-xs px-2.5 py-1 rounded-lg border transition-colors"
+                  style="color:#5B8F7A; border-color:#5B8F7A40; background:#5B8F7A0d;"
+                  @click="openAddForm(coachName as string)"
+                >+ 补签</button>
               </div>
-              <div class="overflow-x-auto">
-                <table class="w-full text-xs">
-                  <thead>
-                    <tr class="border-t border-border bg-page-bg/30">
-                      <th class="px-3 py-1.5 text-left font-medium text-text-light whitespace-nowrap">日期</th>
-                      <th class="px-3 py-1.5 text-left font-medium text-text-light whitespace-nowrap">部门</th>
-                      <th class="px-3 py-1.5 text-left font-medium text-text-light whitespace-nowrap">学校</th>
-                      <th class="px-3 py-1.5 text-left font-medium text-text-light whitespace-nowrap">课程</th>
-                      <th class="px-3 py-1.5 text-center font-medium text-text-light whitespace-nowrap">签到状态</th>
-                      <th class="px-3 py-1.5 text-center font-medium text-text-light whitespace-nowrap">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="record in group" :key="record._row_id" class="border-t border-border hover:bg-page-bg/50">
-                      <td class="px-3 py-1.5 whitespace-nowrap text-text-body">{{ record.check_date }}</td>
-                      <td class="px-3 py-1.5 whitespace-nowrap text-text-body">{{ record.department }}</td>
-                      <td class="px-3 py-1.5 whitespace-nowrap text-text-body">{{ record.school_name }}</td>
-                      <td class="px-3 py-1.5 whitespace-nowrap text-text-body">{{ record.course_name }}</td>
-                      <td class="px-3 py-1.5 text-center">
-                        <select
-                          :value="record.sign_status"
-                          @change="updateStatus(record, ($event.target as HTMLSelectElement).value)"
-                          class="border rounded px-2 py-0.5 text-xs"
-                          :class="statusClass(record.sign_status)"
-                        >
-                          <option v-for="opt in STATUS_OPTIONS" :key="opt" :value="opt">{{ opt }}</option>
-                        </select>
-                      </td>
-                      <td class="px-3 py-1.5 text-center">
-                        <button class="text-red-400 hover:text-red-600 text-xs" @click="deleteRecord(record._row_id)">删除</button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+
+              <!-- Records -->
+              <div
+                v-for="record in group"
+                :key="record._row_id"
+                class="grid gap-2 px-4 py-2.5 border-b border-border/50 last:border-b-0 hover:bg-page-bg/60 transition-colors items-center"
+                style="grid-template-columns: 100px 90px 1fr 1fr 100px 60px;"
+              >
+                <span class="text-xs" style="color:#3D3530;">{{ record.check_date || '—' }}</span>
+                <span class="text-xs truncate" style="color:#6B5F52;" :title="record.department">{{ record.department || '—' }}</span>
+                <span class="text-xs truncate" style="color:#6B5F52;" :title="record.school_name">{{ record.school_name || '—' }}</span>
+                <span class="text-xs truncate" style="color:#6B5F52;" :title="record.course_name">{{ record.course_name || '—' }}</span>
+                <div class="flex justify-center">
+                  <select
+                    :value="record.sign_status"
+                    @change="updateStatus(record, ($event.target as HTMLSelectElement).value)"
+                    class="text-xs border rounded-lg px-2 py-0.5 w-full max-w-[96px] cursor-pointer"
+                    :class="statusClass(record.sign_status)"
+                  >
+                    <option v-for="opt in STATUS_OPTIONS" :key="opt" :value="opt">{{ opt }}</option>
+                  </select>
+                </div>
+                <div class="flex justify-center">
+                  <button class="text-xs hover:text-red-600 transition-colors" style="color:#C17F3A;" @click="deleteRecord(record._row_id)">删除</button>
+                </div>
               </div>
             </div>
           </div>
 
           <!-- Action bar -->
-          <div class="flex items-center gap-3 border-t border-border pt-4">
-            <Button variant="primary" :loading="loading" @click="saveDraft">保存草稿</Button>
+          <div class="flex items-center gap-3 pt-2">
+            <Button variant="secondary" :loading="loading" @click="saveDraft">保存草稿</Button>
             <Button variant="primary" :loading="loading" @click="confirmConsolidation">确认整合</Button>
           </div>
         </div>
