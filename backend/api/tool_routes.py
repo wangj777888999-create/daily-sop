@@ -7,12 +7,14 @@ import io
 import json
 import os
 
-from tools.daily_checkin import preview_files, process_files
+from tools.daily_checkin import preview_files, process_files, _generate_excel
 from tools.db import (
     save_checkin_records, get_batches, get_available_months, get_checkin_by_month,
-    save_monthly_analysis, get_monthly_analyses,
+    save_monthly_analysis, get_monthly_analyses, delete_batch, delete_monthly_analysis,
 )
 from tools.campus_monthly import preview_monthly, process_monthly, UPLOAD_DIR
+
+CHECKIN_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "checkin_output")
 
 router = APIRouter()
 
@@ -55,6 +57,15 @@ async def daily_checkin_process(
         "coach_file": coach_file.filename or "",
         "finance_file": finance_file.filename or "",
     }
+
+    # 保存 Excel 到磁盘：{check_date}_教练签到.xlsx，同日期覆盖
+    os.makedirs(CHECKIN_OUTPUT_DIR, exist_ok=True)
+    output_filename = f"{check_date}_教练签到.xlsx"
+    output_path = os.path.join(CHECKIN_OUTPUT_DIR, output_filename)
+    with open(output_path, "wb") as f:
+        f.write(result["excel_bytes"])
+    batch_info["output_filename"] = output_filename
+
     batch_id = save_checkin_records(result["records"], batch_info)
 
     return {
@@ -72,45 +83,43 @@ async def daily_checkin_download(batch_id: int):
     if not batch:
         raise HTTPException(status_code=404, detail="批次不存在")
 
-    batch_date = batch["batch_date"]
-    year, month, day = batch_date.split("-")
+    output_filename = batch.get("output_filename", "")
+    if not output_filename:
+        raise HTTPException(status_code=404, detail="该批次无生成文件")
 
-    records = get_checkin_by_month(int(year), int(month))
-    day_records = [r for r in records if r["check_date"] == batch_date]
-    if not day_records:
-        raise HTTPException(status_code=404, detail="该批次无数据")
+    filepath = os.path.join(CHECKIN_OUTPUT_DIR, output_filename)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="文件不存在，请重新处理")
 
-    import pandas as pd
-    df = pd.DataFrame(day_records)
-    # Reorder for export
-    export_cols = ['department', 'school_name', 'course_type', 'course_name',
-                   'coach_name', 'course_date', 'start_time', 'end_time',
-                   'sign_in_time', 'sign_out_time', 'sign_status',
-                   'actual_count', 'expected_count', 'confirmed_revenue']
-    rename_map = {
-        'department': '部门', 'school_name': '学校名称', 'course_type': '课程类型',
-        'course_name': '课程名称', 'coach_name': '教练姓名', 'course_date': '课程日期',
-        'start_time': '开课时间', 'end_time': '下课时间', 'sign_in_time': '签到时间',
-        'sign_out_time': '签退时间', 'sign_status': '签到状态',
-        'actual_count': '实际上课人次', 'expected_count': '课程应到人次',
-        'confirmed_revenue': '确认收入',
-    }
-    df = df[[c for c in export_cols if c in df.columns]].rename(columns=rename_map)
+    with open(filepath, "rb") as f:
+        excel_bytes = f.read()
 
-    from tools.daily_checkin import _generate_excel
-    excel_bytes = _generate_excel(df)
-
-    filename = f"{batch_date}_教练签到分析.xlsx"
     return StreamingResponse(
         io.BytesIO(excel_bytes),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(output_filename)}"},
     )
 
 
 @router.get("/tools/daily-checkin/history")
 async def daily_checkin_history(limit: int = Query(50, ge=1, le=200)):
     return get_batches(limit)
+
+
+@router.delete("/tools/daily-checkin/batch/{batch_id}")
+async def daily_checkin_delete_batch(batch_id: int):
+    batch = delete_batch(batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="批次不存在")
+
+    # 删除磁盘文件
+    output_filename = batch.get("output_filename", "")
+    if output_filename:
+        filepath = os.path.join(CHECKIN_OUTPUT_DIR, output_filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+
+    return {"deleted": True, "batch_id": batch_id}
 
 
 @router.get("/tools/daily-checkin/available-months")
@@ -197,3 +206,19 @@ async def campus_monthly_download(analysis_id: int):
 @router.get("/tools/campus-monthly/history")
 async def campus_monthly_history(limit: int = Query(50, ge=1, le=200)):
     return get_monthly_analyses("campus", limit)
+
+
+@router.delete("/tools/campus-monthly/analysis/{analysis_id}")
+async def campus_monthly_delete(analysis_id: int):
+    analysis = delete_monthly_analysis(analysis_id)
+    if not analysis:
+        raise HTTPException(status_code=404, detail="分析记录不存在")
+
+    # 删除磁盘文件
+    filename = analysis.get("filename", "")
+    if filename:
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+
+    return {"deleted": True, "analysis_id": analysis_id}

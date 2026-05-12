@@ -13,3 +13,6 @@ __pycache__/
 data/uploads/
 data/artifacts/
 data/samples/
+data/checkin_output/
+data/monthly_output/
+data/tools.db

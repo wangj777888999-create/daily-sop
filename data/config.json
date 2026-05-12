@@ -1,0 +1,10 @@
+{
+  "tools": {
+    "department_mapping": "data/samples/部门划分.xlsx",
+    "course_types": "data/samples/26年春课程类型.xlsx",
+    "offcampus_coaches": ["邓文凯", "唐崇尧", "王峥", "卞梦男", "苏长锴", "甘洪宇", "何苗", "邱毅俊", "邵志龙", "钱威", "徐思澳", "徐子杰", "许佳晴"],
+    "outside_keywords": ["农都", "西溪", "滨江"],
+    "target_course_types": ["兴趣班", "校队", "梯队"],
+    "exclude_schools": ["乒乓球"]
+  }
+}

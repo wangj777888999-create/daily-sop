@@ -140,7 +140,17 @@ def campus_finance_analysis(coach_att: pd.DataFrame, finance_df: pd.DataFrame) -
     return pivot
 
 
-def course_type_analysis(att_df: pd.DataFrame, type_file: pd.DataFrame) -> Optional[pd.DataFrame]:
+def _get_target_types() -> list:
+    config_path = os.path.join(DATA_DIR, "config.json")
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        return config.get("tools", {}).get("target_course_types", ['兴趣班', '校队', '梯队'])
+    except Exception:
+        return ['兴趣班', '校队', '梯队']
+
+
+def course_type_analysis(att_df: pd.DataFrame, type_file: pd.DataFrame, year: int = 0, month: int = 0) -> Optional[pd.DataFrame]:
     """课程类型分析：课次统计 + 收费类占比"""
     att_df = att_df.copy()
     type_file = type_file.copy()
@@ -167,7 +177,8 @@ def course_type_analysis(att_df: pd.DataFrame, type_file: pd.DataFrame) -> Optio
     att_df_type_ana = merged_df.groupby(['部门', '类型']).size().rename('课程类型次数').reset_index()
     att_df_type_ana_total = att_df_type_ana.groupby('部门')['课程类型次数'].sum().rename('总课次').reset_index()
 
-    target_types = ['兴趣班', '校队', '梯队']
+    target_types = _get_target_types()
+    month_str = f"{month}月" if month else ''
     output_list = []
 
     if not att_df_type_ana_total.empty:
@@ -187,7 +198,8 @@ def course_type_analysis(att_df: pd.DataFrame, type_file: pd.DataFrame) -> Optio
 
             target_ratio = (target_total / total_count) * 100 if total_count != 0 else 0
             type_str = '、'.join(type_str_list)
-            output = f"{dept_name}：总课次{total_count}次，其中{type_str}，（收费类兴趣班、校队/梯队）课次占总课次的{target_ratio:.2f}%"
+            target_names = '、'.join(target_types)
+            output = f"{dept_name}：{month_str}总课次{total_count}次，其中{type_str}，（收费类{target_names}）课次占总课次的{target_ratio:.2f}%"
 
             output_list.append({
                 '部门': dept_name, '总课次': total_count,
@@ -307,7 +319,7 @@ def process_monthly(
     # 4. 课程类型分析（需上传课程类型文件）
     if course_type_bytes:
         type_file = pd.read_excel(io.BytesIO(course_type_bytes), sheet_name='Sheet1')
-        data_to_export['类型分析'] = course_type_analysis(att_df.copy(), type_file)
+        data_to_export['类型分析'] = course_type_analysis(att_df.copy(), type_file, year, month)
 
     # 5. 退款分析（需上传退款文件 + 部门划分）
     if refund_bytes:
