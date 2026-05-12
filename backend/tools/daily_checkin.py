@@ -97,6 +97,11 @@ def process_files(coach_bytes: bytes, finance_bytes: bytes, check_date: str = No
     merged = pd.merge(coach_data, department[['学校名称', '部门']], on='学校名称', how='left')
     result = pd.merge(merged, fi, on='课程名称', how='left')
 
+    # 左连接后财务列可能为 NaN（课程在财务表中无匹配），统一填 0
+    for col in ['实际上课人次', '课程应到人次', '确认收入']:
+        if col in result.columns:
+            result[col] = result[col].fillna(0)
+
     # Reorder columns
     new_order = ['部门']
     for col in result.columns:
@@ -132,9 +137,9 @@ def process_files(coach_bytes: bytes, finance_bytes: bytes, check_date: str = No
             "sign_in_time": str(row.get("签到时间", "")),
             "sign_out_time": str(row.get("签退时间", "")),
             "sign_status": str(row.get("签到状态", "")),
-            "actual_count": int(row.get("实际上课人次", 0) or 0),
-            "expected_count": int(row.get("课程应到人次", 0) or 0),
-            "confirmed_revenue": float(row.get("确认收入", 0) or 0),
+            "actual_count": int(pd.to_numeric(row.get("实际上课人次", 0), errors='coerce') or 0),
+            "expected_count": int(pd.to_numeric(row.get("课程应到人次", 0), errors='coerce') or 0),
+            "confirmed_revenue": float(pd.to_numeric(row.get("确认收入", 0), errors='coerce') or 0),
         })
 
     # Generate formatted Excel
