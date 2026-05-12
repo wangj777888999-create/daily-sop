@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-智能工作台 (AI Workbench) — local-only single-user tool. The headline feature is **SOP automation**: user uploads a Python data-analysis script, the backend parses it into a structured SOP (steps + data sources), the user can re-execute the SOP against new Excel/CSV inputs in a sandbox and download the result.
+智能工作台 (AI Workbench) — local-only single-user tool for education/sports business analytics. The headline feature is the **Toolbox**: a collection of data-analysis tools for daily coach check-in processing, campus monthly reporting, and off-campus monthly reporting — all backed by Python analysis modules and a shared SQLite store. The platform also has a **RAG knowledge base** (vector search + Claude generation) and will grow with more tools over time.
+
+> **SOP automation is deprecated** — the `/sop` route and all SOP pages (`SOPList`, `SOPCreate`, `SOPImport`, `SOPExecute`, `SemanticAnnotation`) are intentionally removed from the router. The `backend/sops/` module and related frontend files remain in the repo but are no longer navigable. Do not add SOP routes back.
 
 > **PROJECT_GUIDE.md is outdated** — it claims a Streamlit/Clean-Architecture stack. The real stack is Vue 3 + FastAPI as described below. Trust the code, not that doc.
 
@@ -14,12 +16,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Backend** (`backend/`): FastAPI + Pydantic + Pandas. Entrypoint `backend/main.py` mounts `backend/api/routes.py` under `/api`. Virtualenv lives in `backend/.venv`.
 - **Persistence** (`data/`): JSON files, no database. `sops.json` (catalog), `execution_logs.json` (history), `uploads/{exec_id}/` (per-execution input files).
 
-Key backend modules in `backend/sops/`:
-- `code_parser.py` — Python AST → SOP JSON (`parse_code_with_sources` is the current entrypoint, returns `{name, description, steps, dataSources}`).
-- `code_generator.py` — `SOPToExecutableCode(sop_dict)` reverses it back to runnable Python.
-- `sandbox.py` — `SandboxExecutor(timeout=60)` runs generated code via `subprocess` with import allow/deny lists and a regex prefilter. Sandbox is best-effort, **not** strong isolation — assumed local-only.
+Key backend modules:
+
+**`backend/tools/`** (under construction — see `docs/规划/2026-05-12-工具箱三大工具建设规划.md`):
+- `db.py` — SQLite operations layer (`data/tools.db`)
+- `daily_checkin.py` — daily coach check-in + finance merge, writes to SQLite
+- `campus_monthly.py` — campus monthly report, reads from SQLite
+- `offcampus_monthly.py` — off-campus monthly report (independent data source)
+
+**`backend/knowledge/`** (backend complete, frontend partially wired):
+- `parser.py` / `chunker.py` / `embedder.py` — document → chunks → embeddings (text2vec-large-chinese)
+- `vector_store.py` — ChromaDB wrapper
+- `rag.py` / `generator.py` — retrieval pipeline + Claude API generation
+- Routes: `backend/api/knowledge_routes.py` mounted under `/api`
+
+**`backend/artifacts.py`** — artifact CRUD (JSON files in `data/artifacts/`), routes in `backend/api/routes.py`.
+
+**`backend/sops/`** (deprecated, not routed, kept for reference):
 - `storage.py` — JSON read/write with `fcntl` locks and atomic tmp→rename writes.
-- `models.py` — Pydantic models. **Status enum is `pending|running|success|failed`** (not `completed`).
 
 ## Commands
 
@@ -45,19 +59,17 @@ There is no frontend test runner configured.
 
 ## Cross-stack contracts (read before changing either side)
 
-The frontend and backend disagree on shape; adapter layers paper over it. **Don't break the adapters without updating both ends.**
+1. **Artifact shape**: `{id, name, type, source_tool, created_at, schema_version, data}`. Type field (e.g. `"monthly-analysis"`) is the contract between producer and consumer tools.
 
-1. **SOP Step shape**:
-   - Frontend (`src/types/sop.ts`): `{id, order, action, params, description, code?}`
-   - Backend (`backend/sops/models.py`): `{step, action, params, description}`
-   - Ingress conversion: `_convert_steps_format()` in `backend/api/routes.py`.
-   - Egress conversion: `getSOP()` in `src/services/sopApi.ts` re-maps `step → order` and synthesizes `id`.
+2. **Tool routing**: tools in the toolbox are either `type: "iframe"` (served from `public/tools/`) or `type: "vue"` (Vue route child of `/toolbox/:toolId`). `ToolDetailPage.vue` branches on this field.
 
-2. **Execution response**: backend returns `{execution_id, status, error_message, ...}`; frontend expects `{id, status, error, ...}`. `adaptExecutionResponse()` in `src/services/sopApi.ts` is the single mapping point.
+3. **postMessage protocol** (iframe tools ↔ Vue parent):
+   ```ts
+   // parent → iframe
+   { type: 'ARTIFACT_INJECT', artifact: { name, type, data } }
+   ```
 
-3. **Status values**: canonical set is `pending | running | success | failed` everywhere. There is a separate `StepStatus` (`completed` etc.) used only for **step-display** state in `StepBadge.vue` / `types/index.ts` — don't conflate them.
-
-4. **Generated-code file paths** (`backend/api/routes.py` `execute_sop`): when running a SOP, uploaded files go to `uploads/{exec_id}/{safe_filename}` and the generated code gets a `__INPUT_PATHS__ = {...}` dict prepended. Literal filename strings in the generated code are then rewritten to `__INPUT_PATHS__["..."]` lookups. This avoids quoting bugs with non-ASCII / spaces / quotes in filenames — preserve this approach if you touch execution.
+4. **Knowledge API response shapes**: search returns `SearchResult[]` (score 0-1 cosine similarity); generate returns `{generated_text, sources[]}`. `src/services/knowledgeApi.ts` is the single mapping point.
 
 ## Design tokens
 
@@ -79,7 +91,8 @@ Never write documentation to the repo root or any path outside `docs/`.
 
 ## Operational notes
 
-- **Execution is synchronous and blocks for up to 60s** (the sandbox timeout). Frontend has polling logic that's now mostly cosmetic; if you make execution async, reuse it.
 - **Don't add CORS / auth / rate-limiting** unless explicitly asked — `docs/规划/2026-04-26-local-audit-report.md` deliberately defers this for the local-only use case.
-- The Python sandbox's import filter is regex-based and bypassable; do not present it as a security boundary.
-- `samples/教练签到分析最终版.py` is a sample SOP-style user script (read-only, used as input for parser testing). Don't treat it as application code.
+- `samples/` contains source scripts for migration to `backend/tools/`: `教练签到分析最终版.py` → `daily_checkin.py`; `campus_monthly_analysis.py` → `campus_monthly.py`; `offcampus_monthly_analysis.py` → `offcampus_monthly.py`. All read-only reference, not application code.
+- `data/samples/` contains reference Excel files for testing: 4月教练签到、4月校内分析、部门划分 等.
+- `docs/规划/2026-05-12-月度分析功能设计.md` is **superseded** — it proposed a pure-frontend SheetJS approach. The current direction is `backend/tools/` Python modules (see `2026-05-12-工具箱三大工具建设规划.md`).
+- The H5 bug in `2026-05-12-全项目代码审查报告.md` ("SOP routes missing") is **not a bug** — SOP is intentionally deprecated. All other H/M items in that report remain open.

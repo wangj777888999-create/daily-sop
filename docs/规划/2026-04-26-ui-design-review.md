@@ -4,6 +4,11 @@
 > **原则**：零业务逻辑改动，仅通过 CSS / Tailwind / Vue 组件层实现  
 > **日期**：2026-04-26
 
+> **执行状态**：
+> - ✅ **已完成** — Phase 1/2 核心改动（Card/Button/Input 升级、骨架屏、进场动画、侧边栏光晕）
+> - 🔲 **待做** — Phase 3（字号 Token 统一，`text-[11px]` 等魔法值替换）、Phase 4（SkeletonCard 组件化）、Phase 5（路由级过渡动画）
+> - ⏸ **暂缓** — Phase 6（Dark Mode）
+
 ---
 
 ## 一、综合评分
