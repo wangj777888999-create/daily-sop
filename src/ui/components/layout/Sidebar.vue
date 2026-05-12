@@ -11,10 +11,12 @@ const navItems = [
   { icon: '✦', label: '政策报告撰写', key: 'policy', path: '/policy' },
   { icon: '◉', label: '高级数据分析', key: 'analytics', path: '/analytics' },
   { icon: '⬡', label: '数据库连接', key: 'database', path: '/database' },
-  { icon: '◗', label: '个人知识库', key: 'knowledge', path: '/knowledge' }
+  { icon: '◗', label: '个人知识库', key: 'knowledge', path: '/knowledge' },
+  { icon: '▤', label: '数据文件', key: 'files', path: '/files' }
 ]
 
 const currentKey = computed(() => {
+  if (route.path.startsWith('/toolbox')) return 'toolbox'
   const item = navItems.find(n => n.path === route.path)
   return item?.key || 'home'
 })

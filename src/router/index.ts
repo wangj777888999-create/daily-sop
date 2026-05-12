@@ -25,10 +25,32 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '工具' },
     children: [
       {
+        path: '',
+        redirect: (to) => `${to.path}/${to.params.toolId}`
+      },
+      {
         path: 'monthly-analysis',
         name: 'monthly-analysis-tool',
         component: () => import('@/ui/pages/tools/MonthlyAnalysis.vue'),
         meta: { title: '校内月度分析' }
+      },
+      {
+        path: 'daily-checkin',
+        name: 'daily-checkin-tool',
+        component: () => import('@/ui/pages/tools/DailyCheckin.vue'),
+        meta: { title: '每日教练签到分析' }
+      },
+      {
+        path: 'campus-monthly',
+        name: 'campus-monthly-tool',
+        component: () => import('@/ui/pages/tools/CampusMonthly.vue'),
+        meta: { title: '校内月度分析' }
+      },
+      {
+        path: 'offcampus-monthly',
+        name: 'offcampus-monthly-tool',
+        component: () => import('@/ui/pages/tools/OffcampusMonthly.vue'),
+        meta: { title: '校外月度分析' }
       }
     ]
   },
@@ -55,6 +77,12 @@ const routes: RouteRecordRaw[] = [
     name: 'knowledge',
     component: () => import('@/ui/pages/knowledge/KnowledgePage.vue'),
     meta: { title: '个人知识库' }
+  },
+  {
+    path: '/files',
+    name: 'files',
+    component: () => import('@/ui/pages/files/FilesPage.vue'),
+    meta: { title: '数据文件' }
   }
 ]
 
