@@ -22,43 +22,7 @@ const routes: RouteRecordRaw[] = [
     path: '/toolbox/:toolId',
     name: 'toolbox-detail',
     component: () => import('@/ui/pages/toolbox/ToolDetailPage.vue'),
-    meta: { title: '工具' },
-    children: [
-      {
-        path: '',
-        redirect: (to) => `${to.path}/${to.params.toolId}`
-      },
-      {
-        path: 'monthly-analysis',
-        name: 'monthly-analysis-tool',
-        component: () => import('@/ui/pages/tools/MonthlyAnalysis.vue'),
-        meta: { title: '校内月度分析' }
-      },
-      {
-        path: 'daily-checkin',
-        name: 'daily-checkin-tool',
-        component: () => import('@/ui/pages/tools/DailyCheckin.vue'),
-        meta: { title: '每日教练签到分析' }
-      },
-      {
-        path: 'checkin-consolidation',
-        name: 'checkin-consolidation-tool',
-        component: () => import('@/ui/pages/tools/CheckinConsolidation.vue'),
-        meta: { title: '签到数据整合' }
-      },
-      {
-        path: 'campus-monthly',
-        name: 'campus-monthly-tool',
-        component: () => import('@/ui/pages/tools/CampusMonthly.vue'),
-        meta: { title: '校内月度分析' }
-      },
-      {
-        path: 'offcampus-monthly',
-        name: 'offcampus-monthly-tool',
-        component: () => import('@/ui/pages/tools/OffcampusMonthly.vue'),
-        meta: { title: '校外月度分析' }
-      }
-    ]
+    meta: { title: '工具' }
   },
   {
     path: '/policy',

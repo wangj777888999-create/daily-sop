@@ -22,7 +22,7 @@
   --t:all .2s cubic-bezier(.4,0,.2,1);
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;background:#f5f5f7;color:var(--g800);line-height:1.5;min-height:100vh;-webkit-font-smoothing:antialiased}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;background:#f5f5f7;color:var(--g800);line-height:1.5;-webkit-font-smoothing:antialiased}
 
 /* Header */
 .hdr{background:#fff;border-bottom:1px solid var(--g200);position:sticky;top:0;z-index:100;box-shadow:var(--sh-xs)}
@@ -712,7 +712,7 @@ function renderCoachCategories() {
       const courseCount = DATA.courses.filter(c => c.coach === name).length;
       return `<div class="ct-item">
         <div><span class="ct-name">${esc(name)}</span><span class="ct-courses"> ${courseCount}门课</span></div>
-        <select onchange="setCoachCategory('${esc(name)}',this.value)">
+        <select onchange="setCoachCategory('${escJs(name)}',this.value)">
           <option value="fulltime" ${cat==='fulltime'?'selected':''}>全职</option>
           <option value="0571" ${cat==='0571'?'selected':''}>0571</option>
           <option value="parttime" ${cat==='parttime'?'selected':''}>兼职</option>
@@ -730,7 +730,7 @@ function renderCoachCategories() {
       const courseCount = DATA.courses.filter(c => c.coach === name).length;
       return `<div class="ct-item">
         <div><span class="ct-name">${esc(name)}</span><span class="ct-courses"> ${courseCount}门课</span></div>
-        <select onchange="setCoachCategory('${esc(name)}',this.value)">
+        <select onchange="setCoachCategory('${escJs(name)}',this.value)">
           <option value="" selected>选择分类</option>
           <option value="fulltime">全职</option>
           <option value="0571">0571</option>
@@ -783,7 +783,7 @@ function renderCoachList() {
     const rules = RULES.coaches[name];
     const cnt = rules ? (rules.rules||[]).length : 0;
     const courseCount = DATA.courses.filter(c => c.coach === name).length;
-    return `<div class="sb-item ${name===selectedCoach?'active':''}" onclick="selectCoach('${esc(name)}')">
+    return `<div class="sb-item ${name===selectedCoach?'active':''}" onclick="selectCoach('${escJs(name)}')">
       <div><div class="name">${esc(name)}</div><div class="meta">${courseCount}门课</div></div>
       ${cnt ? '<span class="cnt">'+cnt+'规则</span>' : ''}
     </div>`;
@@ -1283,8 +1283,9 @@ function importRules(e) {
 
 // ===== Utils =====
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function escJs(s) { return String(s||'').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, ''); }
 function trunc(s, n) { return (s||'').length > n ? s.slice(0,n) + '…' : s; }
-function fn(n) { return (n||0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fn(n) { const v = Number(n); return (isNaN(v) ? 0 : v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function r2(n) { return Math.round(n * 100) / 100; }
 function toast(msg) {
   const t = document.getElementById('toast');
@@ -1345,13 +1346,26 @@ window.addEventListener('message', function(e) {
   }
 });
 
-function importFromPlatform() {
-  // When embedded in iframe, ask parent to provide artifact data
-  if (window.parent !== window) {
-    window.parent.postMessage({ type: 'REQUEST_ARTIFACT' }, '*');
-    document.getElementById('platformImportStatus').textContent = '正在请求数据...';
-  } else {
-    document.getElementById('platformImportStatus').textContent = '请在平台工具箱中使用此功能';
+async function importFromPlatform() {
+  const statusEl = document.getElementById('platformImportStatus');
+  statusEl.textContent = '正在请求数据...';
+  try {
+    const resp = await fetch('/api/artifacts?type=monthly-analysis');
+    if (!resp.ok) throw new Error('API error: ' + resp.status);
+    const artifacts = await resp.json();
+    if (!artifacts.length) {
+      statusEl.textContent = '暂无可用数据，请先在「校内月度分析」中生成';
+      return;
+    }
+    const chosen = artifacts[0];
+    injectArtifactData({
+      name: chosen.name,
+      type: chosen.type,
+      data: chosen.data,
+    });
+    statusEl.textContent = '导入成功: ' + chosen.name;
+  } catch (e) {
+    statusEl.textContent = '导入失败: ' + (e.message || '网络错误');
   }
 }
 </script>

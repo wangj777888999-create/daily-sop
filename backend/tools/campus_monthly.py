@@ -328,9 +328,14 @@ def process_monthly(
         finance_df = _read_excel(finance_bytes, sheet_name='财务')
         data_to_export['校内分析'] = campus_finance_analysis(att_df.copy(), finance_df)
 
-    # 4. 课程类型分析（需上传课程类型文件）
+    # 4. 课程类型分析（上传优先，无上传则自动从 JSON 加载）
     if course_type_bytes:
         type_file = _read_excel(course_type_bytes, sheet_name='Sheet1')
+    else:
+        from tools.course_types import load_all
+        ct_records = load_all()
+        type_file = pd.DataFrame(ct_records) if ct_records else None
+    if type_file is not None and not type_file.empty:
         data_to_export['类型分析'] = course_type_analysis(att_df.copy(), type_file, year, month)
 
     # 5. 退款分析（需上传退款文件 + 部门划分）
@@ -351,6 +356,18 @@ def process_monthly(
     with open(filepath, 'wb') as f:
         f.write(excel_bytes)
 
+    # 检测未映射课程类型的课程
+    unmapped_courses = []
+    if '课程名称' in att_df.columns:
+        all_courses = set(att_df['课程名称'].dropna().unique())
+        try:
+            from tools.course_types import load_all
+            ct_records = load_all()
+            mapped = {r['课程名称'] for r in ct_records}
+            unmapped_courses = sorted(all_courses - mapped)
+        except Exception:
+            pass
+
     return {
         "filename": filename,
         "filepath": filepath,
@@ -358,4 +375,5 @@ def process_monthly(
         "record_count": len(checkin_records),
         "department_count": len(att_df['部门'].unique()),
         "coach_count": len(att_df['教练姓名'].unique()),
+        "unmapped_courses": unmapped_courses,
     }

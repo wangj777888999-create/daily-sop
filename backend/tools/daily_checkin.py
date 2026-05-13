@@ -160,10 +160,23 @@ def process_files(coach_bytes: bytes, finance_bytes: bytes, check_date: str = No
         "non_岗_count": int((result[status_col] != '在岗').sum()) if status_col and status_col in result.columns else 0,
     }
 
+    # 检测未映射课程类型的课程
+    unmapped_courses = []
+    if '课程名称' in result.columns:
+        all_courses = set(result['课程名称'].dropna().unique())
+        try:
+            from tools.course_types import load_all
+            ct_records = load_all()
+            mapped = {r['课程名称'] for r in ct_records}
+            unmapped_courses = sorted(all_courses - mapped)
+        except Exception:
+            pass
+
     return {
         "records": records,
         "excel_bytes": excel_bytes,
         "summary": summary,
+        "unmapped_courses": unmapped_courses,
     }
 
 
@@ -177,6 +190,7 @@ def _generate_excel(df: pd.DataFrame) -> bytes:
     ws.append(headers)
 
     highlight_fill = PatternFill(start_color='FFFF00', end_color='FFFF00', fill_type='solid')
+    modified_fill = PatternFill(start_color='DBEAFE', end_color='DBEAFE', fill_type='solid')
     center_alignment = Alignment(horizontal='center', vertical='center')
 
     status_col_name = None
@@ -186,12 +200,25 @@ def _generate_excel(df: pd.DataFrame) -> bytes:
             break
     status_col_idx = headers.index(status_col_name) + 1 if status_col_name else None
 
+    # Columns where 0 means "no data" → display blank
+    zero_as_blank_cols = {'实际上课人次', '课程应到人次', '确认收入'}
+
     for row_idx, (_, row) in enumerate(df.iterrows(), start=2):
-        ws.append(row.tolist())
+        row_values = row.tolist()
+        # Replace 0 with empty string for zero-as-blank columns
+        for i, h in enumerate(headers):
+            if h in zero_as_blank_cols and row_values[i] == 0:
+                row_values[i] = ''
+        ws.append(row_values)
         for col_idx in range(1, len(headers) + 1):
             ws.cell(row=row_idx, column=col_idx).alignment = center_alignment
         if status_col_idx and row[status_col_name] != '在岗':
             ws.cell(row=row_idx, column=status_col_idx).fill = highlight_fill
+        # Highlight status cell if it was manually modified
+        if status_col_idx and '备注' in headers:
+            remark = str(row.get('备注', '') or '')
+            if '[状态已修改' in remark:
+                ws.cell(row=row_idx, column=status_col_idx).fill = modified_fill
 
     for col_idx in range(1, len(headers) + 1):
         ws.cell(row=1, column=col_idx).alignment = center_alignment

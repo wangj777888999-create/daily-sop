@@ -86,6 +86,11 @@ def init_db():
         conn.execute("ALTER TABLE checkin_batches ADD COLUMN output_filename TEXT")
     except sqlite3.OperationalError:
         pass
+    # Migration: add remark column to daily_checkin
+    try:
+        conn.execute("ALTER TABLE daily_checkin ADD COLUMN remark TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -142,6 +147,46 @@ def get_checkin_by_month(year: int, month: int) -> List[Dict[str, Any]]:
     """, (str(year), f"{month:02d}")).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_checkin_by_date(check_date: str) -> List[Dict[str, Any]]:
+    conn = _get_conn()
+    rows = conn.execute("""
+        SELECT * FROM daily_checkin
+        WHERE check_date = ?
+        ORDER BY department, school_name, coach_name, course_name
+    """, (check_date,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def update_checkin_record(record_id: int, fields: Dict[str, Any]) -> bool:
+    allowed = {'sign_status', 'actual_count', 'expected_count', 'confirmed_revenue', 'remark'}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return False
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [record_id]
+    conn = _get_conn()
+    cur = conn.execute(f"UPDATE daily_checkin SET {set_clause} WHERE id = ?", values)
+    conn.commit()
+    affected = cur.rowcount
+    conn.close()
+    return affected > 0
+
+
+def delete_checkin_record(record_id: int) -> Optional[Dict[str, Any]]:
+    conn = _get_conn()
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM daily_checkin WHERE id = ?", (record_id,)).fetchone()
+    if not row:
+        conn.close()
+        return None
+    info = dict(row)
+    conn.execute("DELETE FROM daily_checkin WHERE id = ?", (record_id,))
+    conn.commit()
+    conn.close()
+    return info
 
 
 def get_available_months() -> List[str]:

@@ -267,6 +267,27 @@ loadHistory()
             </div>
           </div>
 
+          <!-- Unmapped courses warning -->
+          <div v-if="processResult.unmapped_courses?.length" class="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3">
+            <p class="text-sm text-yellow-800 font-medium">
+              有 {{ processResult.unmapped_courses.length }} 个课程未设置类型
+            </p>
+            <p class="text-xs text-yellow-600 mt-1">
+              以下课程在「课程类型划分」中尚无映射，类型分析可能不完整。请前往设置：
+            </p>
+            <div class="flex flex-wrap gap-1.5 mt-2">
+              <span v-for="c in processResult.unmapped_courses" :key="c" class="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
+                {{ c }}
+              </span>
+            </div>
+            <router-link
+              to="/toolbox/course-types"
+              class="inline-block mt-2 text-xs text-yellow-700 hover:text-yellow-900 underline"
+            >
+              前往课程类型划分 →
+            </router-link>
+          </div>
+
           <Button variant="primary" @click="downloadResult">
             下载月度分析 Excel
           </Button>

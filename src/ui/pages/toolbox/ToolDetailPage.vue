@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { tools } from '@/data/tools'
 
@@ -11,6 +11,21 @@ const tool = computed(() => tools.find(t => t.id === route.params.toolId))
 const getIconBg = (color: string) => color + '15'
 const openInNewWindow = (src: string | undefined) => { if (src) window.open(src, '_blank') }
 
+// Dynamic Vue component resolution (replaces child routes)
+const vueComponent = computed(() => {
+  if (!tool.value || tool.value.type !== 'vue') return null
+  const componentMap: Record<string, any> = {
+    'daily-checkin': () => import('@/ui/pages/tools/DailyCheckin.vue'),
+    'checkin-consolidation': () => import('@/ui/pages/tools/CheckinConsolidation.vue'),
+    'campus-monthly': () => import('@/ui/pages/tools/CampusMonthly.vue'),
+    'offcampus-monthly': () => import('@/ui/pages/tools/OffcampusMonthly.vue'),
+    'offcampus-cumulative': () => import('@/ui/pages/tools/OffcampusCumulative.vue'),
+    'course-types': () => import('@/ui/pages/tools/CourseTypes.vue'),
+  }
+  const loader = componentMap[tool.value.id]
+  return loader ? defineAsyncComponent(loader) : null
+})
+
 // --- Artifact injection for iframe tools ---
 async function handleImportArtifact() {
   try {
@@ -20,8 +35,6 @@ async function handleImportArtifact() {
       alert('暂无可用的平台数据，请先在「校内月度分析」中生成数据。')
       return
     }
-    // Simple selection: pick the most recent one
-    // TODO: show a proper selection dialog if multiple artifacts exist
     const chosen = artifacts[0]
     if (iframeRef.value?.contentWindow) {
       iframeRef.value.contentWindow.postMessage({
@@ -90,10 +103,8 @@ async function handleImportArtifact() {
       />
     </div>
 
-    <!-- vue tool -->
-    <div v-else-if="tool.type === 'vue'">
-      <router-view />
-    </div>
+    <!-- vue tool — dynamically loaded component -->
+    <component v-else-if="vueComponent" :is="vueComponent" />
   </div>
 
   <div v-else class="flex flex-col items-center justify-center py-20">

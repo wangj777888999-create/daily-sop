@@ -5,7 +5,7 @@ import json
 from typing import Dict, Any, List
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment
+from openpyxl.styles import Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
@@ -76,16 +76,28 @@ def export_excel(records: List[Dict]) -> bytes:
     ws.append(headers)
 
     center = Alignment(horizontal="center", vertical="center")
+    modified_fill = PatternFill(start_color='DBEAFE', end_color='DBEAFE', fill_type='solid')
+
+    # Column index for "签到状态" and "备注"
+    status_col_idx = headers.index("签到状态") + 1
+    remark_col_idx = headers.index("备注") + 1 if "备注" in headers else None
+
     for cell in ws[1]:
         cell.alignment = center
 
-    for r in records:
+    for row_idx, r in enumerate(records, start=2):
         row = [r.get(key, "") for key, _ in col_map]
+        # Replace 0 with blank for count/revenue columns
+        zero_cols = {'实际上课人次', '课程应到人次', '确认收入'}
+        for i, h in enumerate(headers):
+            if h in zero_cols and row[i] == 0:
+                row[i] = ''
         ws.append(row)
-
-    for row_idx in range(2, ws.max_row + 1):
         for col_idx in range(1, len(headers) + 1):
             ws.cell(row=row_idx, column=col_idx).alignment = center
+        # Highlight status cell if manually modified
+        if remark_col_idx and '[状态已修改' in str(r.get('remark', '') or ''):
+            ws.cell(row=row_idx, column=status_col_idx).fill = modified_fill
 
     # Auto column width
     for col in range(1, ws.max_column + 1):

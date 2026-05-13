@@ -136,6 +136,16 @@ async function loadRecords() {
   }
 }
 
+function onStatusChange(record: CheckinRecord, newStatus: string) {
+  const oldStatus = record.sign_status
+  if (oldStatus === newStatus) return
+  record.sign_status = newStatus
+  const tag = `[状态已修改: ${oldStatus}→${newStatus}]`
+  if (!record.remark || !record.remark.includes(tag)) {
+    record.remark = record.remark ? `${record.remark} ${tag}` : tag
+  }
+}
+
 function clearFilters() {
   filterCoach.value = ''
   filterSchool.value = ''
@@ -396,7 +406,7 @@ loadHistory()
                   <div class="flex justify-center">
                     <select
                       :value="record.sign_status"
-                      @change="record.sign_status = ($event.target as HTMLSelectElement).value"
+                      @change="onStatusChange(record, ($event.target as HTMLSelectElement).value)"
                       class="text-xs border rounded-lg px-1.5 py-0.5 cursor-pointer w-full max-w-[80px]"
                       :style="statusStyle(record.sign_status)">
                       <option v-for="opt in STATUS_OPTIONS" :key="opt" :value="opt">{{ opt }}</option>
