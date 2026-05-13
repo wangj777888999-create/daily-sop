@@ -189,6 +189,35 @@ def delete_checkin_record(record_id: int) -> Optional[Dict[str, Any]]:
     return info
 
 
+def restore_checkin_record(record: Dict[str, Any]) -> Optional[int]:
+    conn = _get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO daily_checkin
+            (id, check_date, department, school_name, course_type, course_name,
+             coach_name, course_date, start_time, end_time,
+             sign_in_time, sign_out_time, sign_status,
+             actual_count, expected_count, confirmed_revenue, remark)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            record.get("id"), record.get("check_date"), record.get("department"),
+            record.get("school_name"), record.get("course_type"), record.get("course_name"),
+            record.get("coach_name"), record.get("course_date"), record.get("start_time"),
+            record.get("end_time"), record.get("sign_in_time"), record.get("sign_out_time"),
+            record.get("sign_status"), record.get("actual_count", 0),
+            record.get("expected_count", 0), record.get("confirmed_revenue", 0),
+            record.get("remark", ""),
+        ))
+        conn.commit()
+        new_id = cur.lastrowid
+        conn.close()
+        return new_id
+    except sqlite3.IntegrityError:
+        conn.close()
+        return None
+
+
 def get_available_months() -> List[str]:
     conn = _get_conn()
     rows = conn.execute("""

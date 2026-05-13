@@ -11,6 +11,7 @@ from tools.daily_checkin import preview_files, process_files
 from tools.db import (
     save_checkin_records, get_batches, get_available_months, get_checkin_by_month,
     get_checkin_by_date, update_checkin_record, delete_checkin_record,
+    restore_checkin_record,
     save_monthly_analysis, get_monthly_analyses, delete_batch, delete_monthly_analysis,
     save_consolidation, get_consolidation, update_consolidation_status,
     get_consolidations, delete_consolidation,
@@ -177,6 +178,14 @@ async def daily_checkin_delete_record(record_id: int):
     if not info:
         raise HTTPException(status_code=404, detail="记录不存在")
     return {"deleted": True, "id": record_id, "record": info}
+
+
+@router.post("/tools/daily-checkin/record/restore")
+async def daily_checkin_restore_record(body: dict):
+    new_id = restore_checkin_record(body)
+    if new_id is None:
+        raise HTTPException(status_code=409, detail="恢复失败，记录可能已存在")
+    return {"restored": True, "id": new_id}
 
 
 # ──────────────────── Campus Monthly Analysis ────────────────────

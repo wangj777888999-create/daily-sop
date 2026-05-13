@@ -58,6 +58,12 @@ def _seed_if_empty() -> list:
         records = df[["课程名称", "类型"]].dropna().to_dict(orient="records")
         _write_json(records)
         logger.info(f"种子数据导入完成: {len(records)} 条课程类型")
+    except FileNotFoundError:
+        logger.warning(f"种子文件不存在: {SEED_FILE}")
+        return []
+    except (ValueError, KeyError) as e:
+        logger.warning(f"种子数据格式错误: {e}")
+        return []
     except Exception as e:
         logger.warning(f"种子数据导入失败: {e}")
         return []
@@ -109,7 +115,10 @@ def import_from_excel(data: bytes) -> dict:
     try:
         df = pd.read_excel(io.BytesIO(data), sheet_name="Sheet1", engine="openpyxl")
     except Exception:
-        df = pd.read_excel(io.BytesIO(data), sheet_name="Sheet1", engine="xlrd")
+        try:
+            df = pd.read_excel(io.BytesIO(data), sheet_name="Sheet1", engine="xlrd")
+        except Exception as e:
+            raise ValueError(f"无法解析 Excel 文件，请确认格式正确：{e}")
 
     if "课程名称" not in df.columns or "类型" not in df.columns:
         raise ValueError("Excel 必须包含「课程名称」和「类型」两列")

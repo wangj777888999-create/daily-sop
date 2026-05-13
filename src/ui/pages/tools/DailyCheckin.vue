@@ -32,6 +32,8 @@ const checkDate = ref(new Date().toISOString().slice(0, 10))
 const loading = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
+const undoRecord = ref<any>(null)
+const undoTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 
 const preview = ref<any>(null)
 const processResult = ref<any>(null)
@@ -216,19 +218,49 @@ async function updateRecord(record: CheckinRecord) {
   }
 }
 
+function clearUndo() {
+  undoRecord.value = null
+  if (undoTimer.value) {
+    clearTimeout(undoTimer.value)
+    undoTimer.value = null
+  }
+}
+
 async function deleteRecord(record: CheckinRecord) {
   if (!confirm(`确定删除该记录？\n${record.coach_name} — ${record.course_name} — ${record.check_date}`)) return
+  clearUndo()
   try {
     const res = await fetch(`${API}/record/${record.id}`, { method: 'DELETE' })
     if (!res.ok) throw new Error('删除失败')
+    const data = await res.json()
     reviewRecords.value.splice(
       reviewRecords.value.findIndex(r => r.id === record.id),
       1
     )
-    successMsg.value = '已删除'
-    setTimeout(() => successMsg.value = '', 2000)
+    undoRecord.value = data.record
+    undoTimer.value = setTimeout(() => { undoRecord.value = null }, 5000)
   } catch (e: any) {
     errorMsg.value = e.message || '删除失败'
+  }
+}
+
+async function undoDelete() {
+  if (!undoRecord.value) return
+  const record = undoRecord.value
+  undoRecord.value = null
+  if (undoTimer.value) { clearTimeout(undoTimer.value); undoTimer.value = null }
+  try {
+    const res = await fetch(`${API}/record/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    })
+    if (!res.ok) throw new Error('撤销失败')
+    await enterReview(record.check_date)
+    successMsg.value = '已撤销删除'
+    setTimeout(() => { successMsg.value = '' }, 2000)
+  } catch (e: any) {
+    errorMsg.value = e.message || '撤销删除失败'
   }
 }
 
@@ -287,6 +319,12 @@ loadHistory()
         </div>
         <div v-if="successMsg" class="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-700">
           {{ successMsg }}
+        </div>
+        <div v-if="undoRecord" class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800 flex items-center justify-between">
+          <span>记录已删除</span>
+          <button class="text-accent hover:underline font-medium text-xs" @click="undoDelete">
+            撤销
+          </button>
         </div>
 
         <!-- Step 1: Upload -->

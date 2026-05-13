@@ -5,37 +5,57 @@ import Card from '@/ui/components/common/Card.vue'
 
 type Step = 'select' | 'preview' | 'result'
 
+interface FileSlot {
+  key: string
+  label: string
+  required: boolean
+  description?: string
+}
+
 const step = ref<Step>('select')
 const loading = ref(false)
 const errorMsg = ref('')
 
-// TODO: 根据业务说明定义文件上传项
-const fileList = ref<(File | null)[]>([null, null, null])
+const fileSlots: FileSlot[] = [
+  { key: 'report_1', label: '校外月度报表1', required: true },
+  { key: 'report_2', label: '校外月度报表2', required: true },
+  { key: 'report_3', label: '校外月度报表3', required: true },
+]
+
+const fileMap = ref<Record<string, File | null>>(
+  Object.fromEntries(fileSlots.map(s => [s.key, null]))
+)
+
 const preview = ref<any>(null)
 const processResult = ref<any>(null)
 const history = ref<any[]>([])
 
 const API = '/api/tools/offcampus-cumulative'
 
-// TODO: 根据业务要求定义必需文件校验
-const canPreview = computed(() => fileList.value.some(f => f !== null))
+const requiredSlots = computed(() => fileSlots.filter(s => s.required))
+const canPreview = computed(() => requiredSlots.value.every(s => fileMap.value[s.key] !== null))
 
-function onFileSelect(event: Event, index: number) {
+function onFileSelect(event: Event, key: string) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
-  fileList.value[index] = file
+  fileMap.value[key] = file
+}
+
+function buildFormData(): FormData {
+  const fd = new FormData()
+  for (const slot of fileSlots) {
+    const f = fileMap.value[slot.key]
+    if (f) fd.append(slot.key, f)
+  }
+  return fd
 }
 
 async function doPreview() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const fd = new FormData()
-    fileList.value.forEach((f, i) => {
-      if (f) fd.append(`file_${i}`, f)
-    })
-    const res = await fetch(`${API}/preview`, { method: 'POST', body: fd })
+    const res = await fetch(`${API}/preview`, { method: 'POST', body: buildFormData() })
     if (!res.ok) {
       const err = await res.json()
       throw new Error(err.detail || '预览失败')
@@ -53,11 +73,7 @@ async function doProcess() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const fd = new FormData()
-    fileList.value.forEach((f, i) => {
-      if (f) fd.append(`file_${i}`, f)
-    })
-    const res = await fetch(`${API}/process`, { method: 'POST', body: fd })
+    const res = await fetch(`${API}/process`, { method: 'POST', body: buildFormData() })
     if (!res.ok) {
       const err = await res.json()
       throw new Error(err.detail || '处理失败')
@@ -93,7 +109,17 @@ function reset() {
   preview.value = null
   processResult.value = null
   errorMsg.value = ''
-  fileList.value = [null, null, null]
+  for (const slot of fileSlots) {
+    fileMap.value[slot.key] = null
+  }
+}
+
+function hasFile(key: string): boolean {
+  return fileMap.value[key] !== null
+}
+
+function getFile(key: string): File | null {
+  return fileMap.value[key]
 }
 
 function formatMoney(n: number) {
@@ -131,21 +157,22 @@ loadHistory()
         <div v-if="step === 'select'" class="flex flex-col gap-4">
           <p class="text-sm text-text-light">请上传数据文件以开始累积分析</p>
 
-          <div class="grid grid-cols-3 gap-4">
+          <div :class="`grid gap-4`" :style="`grid-template-columns: repeat(${Math.min(fileSlots.length, 3)}, 1fr);`">
             <label
-              v-for="(label, i) in ['校外月度报表1', '校外月度报表2', '校外月度报表3']"
-              :key="i"
+              v-for="slot in fileSlots"
+              :key="slot.key"
               class="border border-dashed border-border rounded-xl p-5 text-center cursor-pointer hover:border-accent transition-colors"
             >
-              <input type="file" accept=".xlsx,.xls" class="hidden" @change="onFileSelect($event, i)" />
-              <div v-if="!fileList[i]">
+              <input type="file" accept=".xlsx,.xls" class="hidden" @change="onFileSelect($event, slot.key)" />
+              <div v-if="!hasFile(slot.key)">
                 <p class="text-xl mb-1">◈</p>
-                <p class="text-sm font-medium text-text-heading">{{ label }}</p>
-                <p class="text-xs text-red-400 mt-1">必需</p>
+                <p class="text-sm font-medium text-text-heading">{{ slot.label }}</p>
+                <p v-if="slot.required" class="text-xs text-red-400 mt-1">必需</p>
+                <p v-else class="text-xs text-text-light mt-1">可选</p>
               </div>
               <div v-else>
-                <p class="text-sm font-medium text-green-600">✓ {{ fileList[i]!.name }}</p>
-                <p class="text-xs text-text-light mt-1">{{ (fileList[i]!.size / 1024).toFixed(1) }} KB</p>
+                <p class="text-sm font-medium text-green-600">✓ {{ getFile(slot.key)!.name }}</p>
+                <p class="text-xs text-text-light mt-1">{{ (getFile(slot.key)!.size / 1024).toFixed(1) }} KB</p>
               </div>
             </label>
           </div>
@@ -179,12 +206,12 @@ loadHistory()
           <!-- File status -->
           <div class="flex flex-wrap gap-2 text-xs">
             <span
-              v-for="(f, i) in fileList"
-              :key="i"
-              :class="f ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'"
+              v-for="slot in fileSlots"
+              :key="slot.key"
+              :class="hasFile(slot.key) ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'"
               class="px-2 py-1 rounded"
             >
-              {{ f ? `报表${i + 1}: ${f.name}` : `报表${i + 1}: 未上传` }}
+              {{ hasFile(slot.key) ? `${slot.label}: ${getFile(slot.key)!.name}` : `${slot.label}: 未上传` }}
             </span>
           </div>
 

@@ -214,7 +214,7 @@ onMounted(loadData)
                   <td class="px-4 py-2">
                     <select
                       :value="r.类型"
-                      @change="updateType(records.indexOf(r), ($event.target as HTMLSelectElement).value)"
+                      @change="updateType(records.findIndex(x => x.课程名称 === r.课程名称), ($event.target as HTMLSelectElement).value)"
                       class="border border-border rounded-md px-2 py-1 text-sm bg-white focus:outline-none focus:border-accent w-full"
                     >
                       <option v-for="t in typeOptions" :key="t" :value="t">{{ t }}</option>
@@ -223,7 +223,7 @@ onMounted(loadData)
                   <td class="px-4 py-2 text-center">
                     <button
                       class="text-red-400 hover:text-red-600 text-xs"
-                      @click="deleteRecord(records.indexOf(r))"
+                      @click="deleteRecord(records.findIndex(x => x.课程名称 === r.课程名称))"
                     >
                       删除
                     </button>
