@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>YOLO 本地微调扫盲指南</title>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --card: #ffffff;
+    --accent: #5b8f7a;
+    --accent-light: #e8f2ee;
+    --accent-dark: #3d6b59;
+    --warn: #d97706;
+    --warn-light: #fef3c7;
+    --danger: #dc2626;
+    --danger-light: #fee2e2;
+    --info: #2563eb;
+    --info-light: #dbeafe;
+    --text: #1a1a1a;
+    --text-muted: #6b7280;
+    --border: #e5e7eb;
+    --code-bg: #1e2433;
+    --code-text: #e2e8f0;
+    --step-bg: #f0faf5;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 15px;
+  }
+
+  .page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  /* ── Hero ── */
+  .hero {
+    background: linear-gradient(135deg, var(--accent-dark) 0%, var(--accent) 60%, #7aab96 100%);
+    border-radius: 20px;
+    padding: 48px 40px;
+    color: white;
+    margin-bottom: 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: "";
+    position: absolute;
+    right: -40px; top: -40px;
+    width: 240px; height: 240px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.07);
+  }
+  .hero::after {
+    content: "";
+    position: absolute;
+    right: 60px; bottom: -60px;
+    width: 160px; height: 160px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+  }
+  .hero-tag {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    margin-bottom: 16px;
+  }
+  .hero h1 { font-size: 32px; font-weight: 800; margin-bottom: 10px; }
+  .hero p { font-size: 15px; opacity: 0.88; max-width: 560px; }
+  .hero-meta { margin-top: 24px; display: flex; gap: 24px; flex-wrap: wrap; }
+  .hero-meta span {
+    font-size: 13px; opacity: 0.8;
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  /* ── TOC ── */
+  .toc {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px 28px;
+    margin-bottom: 32px;
+  }
+  .toc h2 { font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 14px; }
+  .toc ol { padding-left: 18px; }
+  .toc li { margin: 6px 0; }
+  .toc a { color: var(--accent-dark); text-decoration: none; font-size: 14px; }
+  .toc a:hover { text-decoration: underline; }
+
+  /* ── Section ── */
+  section { margin-bottom: 48px; }
+  .section-number {
+    display: inline-flex;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    font-weight: 800;
+    font-size: 14px;
+    align-items: center;
+    justify-content: center;
+    margin-right: 10px;
+    flex-shrink: 0;
+  }
+  h2.section-title {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--accent-light);
+  }
+  h3 { font-size: 16px; font-weight: 700; margin: 24px 0 10px; color: var(--text); }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 26px;
+    margin-bottom: 16px;
+  }
+
+  /* ── Pipeline ── */
+  .pipeline {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    overflow-x: auto;
+    margin: 24px 0;
+    padding: 4px;
+  }
+  .pipe-step {
+    flex: 1;
+    min-width: 110px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 12px;
+    text-align: center;
+    position: relative;
+  }
+  .pipe-step + .pipe-step::before {
+    content: "→";
+    position: absolute;
+    left: -14px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 18px;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .pipe-icon { font-size: 24px; margin-bottom: 6px; }
+  .pipe-label { font-size: 12px; font-weight: 700; color: var(--text); }
+  .pipe-sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+
+  /* ── Callouts ── */
+  .callout {
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .callout-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+  .callout-body { flex: 1; }
+  .callout-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+  .callout-text { font-size: 13.5px; line-height: 1.6; }
+  .callout.tip { background: var(--accent-light); }
+  .callout.tip .callout-title { color: var(--accent-dark); }
+  .callout.warn { background: var(--warn-light); }
+  .callout.warn .callout-title { color: var(--warn); }
+  .callout.danger { background: var(--danger-light); }
+  .callout.danger .callout-title { color: var(--danger); }
+  .callout.info { background: var(--info-light); }
+  .callout.info .callout-title { color: var(--info); }
+
+  /* ── Code ── */
+  .code-block {
+    background: var(--code-bg);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin: 16px 0;
+    position: relative;
+    overflow-x: auto;
+  }
+  .code-block pre {
+    color: var(--code-text);
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre;
+  }
+  .code-label {
+    position: absolute;
+    top: 8px; right: 14px;
+    font-size: 11px;
+    color: #64748b;
+    font-family: monospace;
+  }
+  .cmt { color: #64748b; }
+  .kw { color: #93c5fd; }
+  .str { color: #86efac; }
+  .num { color: #fca5a5; }
+  .fn { color: #fcd34d; }
+  .var { color: #e2e8f0; }
+
+  /* ── Table ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 13.5px;
+  }
+  th {
+    background: var(--step-bg);
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid var(--border);
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafaf9; }
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .tag.green { background: #dcfce7; color: #16a34a; }
+  .tag.yellow { background: #fef3c7; color: #d97706; }
+  .tag.red { background: #fee2e2; color: #dc2626; }
+  .tag.blue { background: #dbeafe; color: #2563eb; }
+
+  /* ── Steps ── */
+  .steps { display: flex; flex-direction: column; gap: 16px; }
+  .step {
+    display: flex;
+    gap: 16px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 22px;
+  }
+  .step-num {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    font-weight: 800;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .step-content { flex: 1; }
+  .step-title { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+  .step-desc { font-size: 13.5px; color: var(--text-muted); line-height: 1.6; }
+
+  /* ── Comparison grid ── */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 16px 0;
+  }
+  @media (max-width: 600px) { .compare-grid { grid-template-columns: 1fr; } }
+  .compare-card {
+    border-radius: 12px;
+    padding: 18px 20px;
+    border: 1px solid var(--border);
+  }
+  .compare-card.good { border-color: #86efac; background: #f0fdf4; }
+  .compare-card.bad { border-color: #fca5a5; background: #fff5f5; }
+  .compare-card h4 { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+  .compare-card.good h4 { color: #16a34a; }
+  .compare-card.bad h4 { color: #dc2626; }
+  .compare-card ul { padding-left: 16px; font-size: 13px; }
+  .compare-card li { margin: 5px 0; }
+
+  /* ── Divider ── */
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+
+  p { margin-bottom: 10px; }
+  ul, ol { padding-left: 20px; }
+  li { margin: 6px 0; font-size: 14px; }
+  strong { font-weight: 700; }
+  code {
+    background: #f1f5f9;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-family: monospace;
+    font-size: 12.5px;
+    color: #1e40af;
+  }
+  .text-muted { color: var(--text-muted); font-size: 13px; }
+
+  /* ── Footer ── */
+  .footer {
+    text-align: center;
+    margin-top: 60px;
+    color: var(--text-muted);
+    font-size: 12px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-tag">扫盲文档 · 本地化微调</div>
+    <h1>YOLO 模型本地化训练指南</h1>
+    <p>从零理解微调原理，到用你们自己的照片训练出适合真实场景的人数识别模型。</p>
+    <div class="hero-meta">
+      <span>📅 2026-05-14</span>
+      <span>🎯 目标：提升堆叠/模糊场景识别精度</span>
+      <span>🤖 基础模型：YOLOv8n</span>
+    </div>
+  </div>
+
+  <!-- TOC -->
+  <div class="toc">
+    <h2>目录</h2>
+    <ol>
+      <li><a href="#s1">什么是微调？和重新训练有什么区别？</a></li>
+      <li><a href="#s2">完整微调流程全景图</a></li>
+      <li><a href="#s3">第一步：数据收集 —— 什么样的照片有用</a></li>
+      <li><a href="#s4">第二步：数据标注 —— 手把手教你打标签</a></li>
+      <li><a href="#s5">第三步：环境搭建与依赖安装</a></li>
+      <li><a href="#s6">第四步：训练命令详解</a></li>
+      <li><a href="#s7">第五步：读懂训练结果</a></li>
+      <li><a href="#s8">第六步：把新模型接入系统</a></li>
+      <li><a href="#s9">常见问题 FAQ</a></li>
+      <li><a href="#s10">关键参数速查表</a></li>
+    </ol>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section id="s1">
+    <h2 class="section-title">
+      <span class="section-number">1</span>什么是微调？和重新训练有什么区别？
+    </h2>
+
+    <div class="compare-grid">
+      <div class="compare-card good">
+        <h4>✅ 微调（Fine-tuning）—— 你该做的</h4>
+        <ul>
+          <li>在已有的 YOLOv8n 权重基础上继续训练</li>
+          <li>只需要 <strong>50～500 张</strong> 你自己的照片</li>
+          <li>训练时间 30 分钟 ～ 2 小时（CPU 也能跑）</li>
+          <li>模型"认识"了你们健身房/教室的场景</li>
+          <li>精度提升明显，尤其是堆叠和低质照片</li>
+        </ul>
+      </div>
+      <div class="compare-card bad">
+        <h4>❌ 从头训练（Training from Scratch）—— 不必要</h4>
+        <ul>
+          <li>需要数十万张标注图片</li>
+          <li>需要高端 GPU，训练数天</li>
+          <li>普通业务场景完全没必要</li>
+          <li>效果不一定比微调好</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout tip">
+      <div class="callout-icon">💡</div>
+      <div class="callout-body">
+        <div class="callout-title">核心逻辑类比</div>
+        <div class="callout-text">
+          把 YOLOv8n 想象成一个在全球数百万张照片上训练过的"人类专家"——他认识人、车、动物等80种物体。
+          你的微调就是给他看你们的具体照片，告诉他："在我们的场景下，拍摄角度是这样的、密度是这样的，你要学会识别这些情况。"
+          <br/><strong>不需要从零教他认识人，只需要让他熟悉你们的场景。</strong>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section id="s2">
+    <h2 class="section-title">
+      <span class="section-number">2</span>完整微调流程全景图
+    </h2>
+
+    <div class="pipeline">
+      <div class="pipe-step">
+        <div class="pipe-icon">📸</div>
+        <div class="pipe-label">收集照片</div>
+        <div class="pipe-sub">50～500 张<br/>你们的真实照片</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-icon">🏷️</div>
+        <div class="pipe-label">标注人体框</div>
+        <div class="pipe-sub">用工具画框<br/>导出 YOLO 格式</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-icon">⚙️</div>
+        <div class="pipe-label">配置训练</div>
+        <div class="pipe-sub">写 data.yaml<br/>设训练参数</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-icon">🚀</div>
+        <div class="pipe-label">运行训练</div>
+        <div class="pipe-sub">yolo train<br/>等待结果</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-icon">📊</div>
+        <div class="pipe-label">评估效果</div>
+        <div class="pipe-sub">查看 mAP<br/>找到 best.pt</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-icon">🔄</div>
+        <div class="pipe-label">替换模型</div>
+        <div class="pipe-sub">复制 best.pt<br/>重启后端</div>
+      </div>
+    </div>
+
+    <p class="text-muted">整个流程可以用我们系统内置的「YOLO 验证与调参」工具完成前两步（收集 + 初步筛选），
+    后续步骤在本机终端运行即可。</p>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section id="s3">
+    <h2 class="section-title">
+      <span class="section-number">3</span>第一步：数据收集 —— 什么样的照片有用
+    </h2>
+
+    <h3>数量要求</h3>
+    <table>
+      <thead>
+        <tr><th>样本数</th><th>效果预期</th><th>标注时间（约）</th><th>推荐程度</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>50 张</strong></td>
+          <td>能感受到改善，但不稳定</td>
+          <td>1～2 小时</td>
+          <td><span class="tag yellow">最低可用</span></td>
+        </tr>
+        <tr>
+          <td><strong>100～200 张</strong></td>
+          <td>明显提升，尤其是堆叠和模糊场景</td>
+          <td>3～6 小时</td>
+          <td><span class="tag green">推荐</span></td>
+        </tr>
+        <tr>
+          <td><strong>500+ 张</strong></td>
+          <td>效果稳定，接近商业级别</td>
+          <td>1～3 天</td>
+          <td><span class="tag blue">理想</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>照片质量要求</h3>
+    <div class="card">
+      <ul>
+        <li>✅ <strong>覆盖你们的真实场景</strong>：不同教室、不同拍摄角度、不同时段光线</li>
+        <li>✅ <strong>人数分布要均匀</strong>：有 0 人（空教室）、少人（3-5 人）、多人（10+ 人）的样本都要有</li>
+        <li>✅ <strong>问题场景优先</strong>：重点收集堆叠/模糊/远景等识别困难的照片</li>
+        <li>✅ <strong>格式不限</strong>：JPG/PNG 均可，不需要统一尺寸</li>
+        <li>❌ <strong>避免重复帧</strong>：同一秒连拍的 10 张几乎没用，不如换 10 个不同场景</li>
+        <li>❌ <strong>不需要高清原图</strong>：手机拍的就够，模型训练用的是 640px 缩放版</li>
+      </ul>
+    </div>
+
+    <div class="callout warn">
+      <div class="callout-icon">⚠️</div>
+      <div class="callout-body">
+        <div class="callout-title">数据多样性比数量更重要</div>
+        <div class="callout-text">
+          100 张覆盖各种场景的照片，远好于 500 张同一个角度的照片。
+          训练数据越接近真实使用时的照片分布，效果越好。
+        </div>
+      </div>
+    </div>
+
+    <h3>用系统工具收集数据</h3>
+    <p>打开工具箱 → <strong>YOLO 模型验证与调参</strong> → 上传照片运行识别 → 在框明细里确认/修正标注 → 点击"保存为训练样本" → 切换到"训练样本库"Tab 导出。</p>
+    <p>这个流程自动帮你把图片和 YOLO 格式的标注文件存到 <code>data/training_samples/</code>，导出时打包成可以直接训练的 zip。</p>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section id="s4">
+    <h2 class="section-title">
+      <span class="section-number">4</span>第二步：数据标注 —— 手把手教你打标签
+    </h2>
+
+    <h3>什么是 YOLO 格式标注？</h3>
+    <p>每张图片对应一个同名的 <code>.txt</code> 文件，每行描述一个检测框：</p>
+
+    <div class="code-block">
+      <span class="code-label">labels/photo_001.txt</span>
+      <pre><span class="cmt"># 格式：类别id  中心x  中心y  宽度  高度（所有值都是归一化的 0~1）</span>
+<span class="num">0</span> <span class="num">0.512</span> <span class="num">0.341</span> <span class="num">0.120</span> <span class="num">0.380</span>   <span class="cmt"># 第1个人</span>
+<span class="num">0</span> <span class="num">0.782</span> <span class="num">0.510</span> <span class="num">0.095</span> <span class="num">0.290</span>   <span class="cmt"># 第2个人</span>
+<span class="num">0</span> <span class="num">0.251</span> <span class="num">0.620</span> <span class="num">0.108</span> <span class="num">0.350</span>   <span class="cmt"># 第3个人</span></pre>
+    </div>
+
+    <div class="callout info">
+      <div class="callout-icon">ℹ️</div>
+      <div class="callout-body">
+        <div class="callout-title">归一化是什么意思？</div>
+        <div class="callout-text">
+          假设图片宽 1920px，一个人的框从像素 x=600 到 x=800，那么：<br/>
+          中心 x = (600+800)/2 / 1920 = 700 / 1920 ≈ <strong>0.365</strong><br/>
+          宽度 = (800-600) / 1920 = 200 / 1920 ≈ <strong>0.104</strong><br/>
+          <strong>系统导出时会自动帮你做这个换算，不需要手算。</strong>
+        </div>
+      </div>
+    </div>
+
+    <h3>推荐标注工具</h3>
+    <table>
+      <thead>
+        <tr><th>工具</th><th>优点</th><th>缺点</th><th>适合场景</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>LabelImg</strong><br/><code>pip install labelImg</code></td>
+          <td>本地运行，原生支持 YOLO 格式输出，免费</td>
+          <td>界面老旧，批量操作不便</td>
+          <td><span class="tag green">推荐入门</span> 几十张图片</td>
+        </tr>
+        <tr>
+          <td><strong>Label Studio</strong><br/>网页版，本地部署</td>
+          <td>界面好，支持团队协作，功能全</td>
+          <td>安装略复杂</td>
+          <td><span class="tag blue">推荐中量</span> 100+ 张</td>
+        </tr>
+        <tr>
+          <td><strong>Roboflow</strong><br/>在线平台</td>
+          <td>标注、增强、导出一站式，AI 辅助标注</td>
+          <td>免费版有配额限制，数据在云端</td>
+          <td><span class="tag yellow">大量数据</span> 有隐私顾虑则慎用</td>
+        </tr>
+        <tr>
+          <td><strong>系统内置工具</strong><br/>验证与调参 Tab</td>
+          <td>直接用 YOLO 已识别的框，人工确认/修正，无需额外安装</td>
+          <td>无法手动画新框，只能在已检测到的基础上增删</td>
+          <td><span class="tag green">最省事</span> 快速积累</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>LabelImg 标注流程（最简单方案）</h3>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <div class="step-title">安装 LabelImg</div>
+          <div class="step-desc">
+            <code>pip install labelImg</code>，然后命令行输入 <code>labelImg</code> 启动。
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <div class="step-title">切换到 YOLO 格式</div>
+          <div class="step-desc">
+            左侧菜单 → 点击 <code>PascalVOC</code> 按钮切换为 <strong>YOLO</strong> 格式（很重要！）。
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <div class="step-title">打开图片目录</div>
+          <div class="step-desc">
+            File → Open Dir → 选择你的照片文件夹。File → Change Save Dir → 指定标注输出目录。
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <div class="step-title">创建标注文件</div>
+          <div class="step-desc">
+            在 Classes 列表只写 <code>person</code> 一个类别。按 <strong>W</strong> 键开始画框，框住每一个人（包括被遮挡的），完成后按 <strong>D</strong> 切换下一张。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout warn">
+      <div class="callout-icon">⚠️</div>
+      <div class="callout-body">
+        <div class="callout-title">标注规范 3 条铁律</div>
+        <div class="callout-text">
+          1. <strong>宁漏勿错</strong>：不确定是不是人的，不画框。画了错误框比漏掉一个人危害更大。<br/>
+          2. <strong>堆叠也要画</strong>：两个人重叠，每个人单独画一个框，哪怕框之间高度重叠。<br/>
+          3. <strong>至少框住头到腰</strong>：全身框最好，但半身框也可以。不要只框头部。
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section id="s5">
+    <h2 class="section-title">
+      <span class="section-number">5</span>第三步：环境搭建与依赖安装
+    </h2>
+
+    <h3>系统要求</h3>
+    <table>
+      <thead><tr><th>设备</th><th>可用性</th><th>训练 100 张的时间</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Mac M1/M2/M3</td>
+          <td><span class="tag green">推荐</span></td>
+          <td>20～40 分钟</td>
+          <td>ultralytics 原生支持 MPS 加速，速度与中端 GPU 接近</td>
+        </tr>
+        <tr>
+          <td>Mac Intel</td>
+          <td><span class="tag yellow">可用</span></td>
+          <td>1～3 小时</td>
+          <td>纯 CPU 训练，慢但能跑</td>
+        </tr>
+        <tr>
+          <td>Windows + NVIDIA GPU</td>
+          <td><span class="tag green">最快</span></td>
+          <td>10～20 分钟</td>
+          <td>需要安装 CUDA，速度最快</td>
+        </tr>
+        <tr>
+          <td>Windows 无 GPU</td>
+          <td><span class="tag yellow">可用</span></td>
+          <td>1～3 小时</td>
+          <td>CPU 训练</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>安装步骤</h3>
+    <div class="code-block">
+      <span class="code-label">Terminal（在 backend/ 目录下）</span>
+      <pre><span class="cmt"># 激活后端虚拟环境</span>
+<span class="kw">source</span> .venv/bin/activate
+
+<span class="cmt"># 安装 ultralytics（如果没装）</span>
+<span class="kw">pip install</span> ultralytics
+
+<span class="cmt"># 验证安装</span>
+<span class="kw">yolo</span> version
+<span class="cmt"># 输出类似：Ultralytics 8.x.x ✅</span></pre>
+    </div>
+
+    <div class="callout info">
+      <div class="callout-icon">ℹ️</div>
+      <div class="callout-body">
+        <div class="callout-title">如果 pip 安装很慢</div>
+        <div class="callout-text">
+          使用国内镜像：<code>pip install ultralytics -i https://pypi.tuna.tsinghua.edu.cn/simple</code>
+        </div>
+      </div>
+    </div>
+
+    <h3>数据集目录结构</h3>
+    <p>从系统导出的 zip 解压后就是这个结构，如果用 LabelImg 自己整理，请按此结构组织：</p>
+
+    <div class="code-block">
+      <span class="code-label">目录结构</span>
+      <pre><span class="fn">dataset/</span>
+├── <span class="str">data.yaml</span>          <span class="cmt"># 数据集配置文件（关键）</span>
+├── <span class="fn">images/</span>
+│   ├── <span class="fn">train/</span>         <span class="cmt"># 训练集图片（约 80%）</span>
+│   │   ├── photo_001.jpg
+│   │   └── ...
+│   └── <span class="fn">val/</span>           <span class="cmt"># 验证集图片（约 20%）</span>
+│       ├── photo_101.jpg
+│       └── ...
+└── <span class="fn">labels/</span>
+    ├── <span class="fn">train/</span>         <span class="cmt"># 对应标注文件（.txt 同名）</span>
+    │   ├── photo_001.txt
+    │   └── ...
+    └── <span class="fn">val/</span>
+        ├── photo_101.txt
+        └── ...</pre>
+    </div>
+
+    <div class="code-block">
+      <span class="code-label">dataset/data.yaml</span>
+      <pre><span class="var">path</span>: <span class="str">./dataset</span>       <span class="cmt"># 数据集根目录（相对路径或绝对路径）</span>
+<span class="var">train</span>: <span class="str">images/train</span>
+<span class="var">val</span>: <span class="str">images/val</span>
+
+<span class="var">names</span>:
+  <span class="num">0</span>: <span class="str">person</span>           <span class="cmt"># 类别 0 = person，和 COCO 数据集保持一致</span></pre>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section id="s6">
+    <h2 class="section-title">
+      <span class="section-number">6</span>第四步：训练命令详解
+    </h2>
+
+    <h3>基础训练命令（直接能用）</h3>
+    <div class="code-block">
+      <span class="code-label">Terminal</span>
+      <pre><span class="kw">yolo train</span> \
+  <span class="var">model</span>=<span class="str">yolov8n.pt</span> \          <span class="cmt"># 基础模型：从 yolov8n 微调</span>
+  <span class="var">data</span>=<span class="str">dataset/data.yaml</span> \   <span class="cmt"># 你的数据集配置文件</span>
+  <span class="var">epochs</span>=<span class="num">50</span> \                 <span class="cmt"># 训练轮数</span>
+  <span class="var">imgsz</span>=<span class="num">640</span> \                 <span class="cmt"># 训练图片尺寸</span>
+  <span class="var">batch</span>=<span class="num">8</span> \                   <span class="cmt"># 每次同时训练的图片数</span>
+  <span class="var">patience</span>=<span class="num">10</span> \              <span class="cmt"># 早停：10 轮无改善就停止</span>
+  <span class="var">project</span>=<span class="str">runs/finetune</span> \   <span class="cmt"># 结果保存目录</span>
+  <span class="var">name</span>=<span class="str">person_v1</span>             <span class="cmt"># 实验名称</span></pre>
+    </div>
+
+    <h3>参数逐个解析</h3>
+    <table>
+      <thead><tr><th>参数</th><th>作用</th><th>调整建议</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>model</code></td>
+          <td>起点模型权重</td>
+          <td>用 <code>yolov8n.pt</code>（最小最快），效果不好换 <code>yolov8s.pt</code></td>
+        </tr>
+        <tr>
+          <td><code>epochs</code></td>
+          <td>整个数据集被扫描几遍</td>
+          <td>样本少（&lt;100）用 50；样本多（500+）可到 100。不用手动停，有 patience</td>
+        </tr>
+        <tr>
+          <td><code>imgsz</code></td>
+          <td>训练时图片缩放到的边长</td>
+          <td>默认 640。如果照片里人很小（远景）可试 960，但训练更慢</td>
+        </tr>
+        <tr>
+          <td><code>batch</code></td>
+          <td>每次并行处理的图片数</td>
+          <td>Mac M 系列用 16；CPU 训练用 4；显存 8G GPU 用 16～32</td>
+        </tr>
+        <tr>
+          <td><code>patience</code></td>
+          <td>早停：连续 N 轮无改善就停止</td>
+          <td>10～15。防止过拟合，也节省时间</td>
+        </tr>
+        <tr>
+          <td><code>lr0</code></td>
+          <td>初始学习率</td>
+          <td>默认 0.01。微调时可降到 <code>0.001</code>，让模型更平稳地适应新数据</td>
+        </tr>
+        <tr>
+          <td><code>freeze</code></td>
+          <td>冻结前 N 层不参与训练</td>
+          <td>样本极少（&lt;50）时可用 <code>freeze=10</code>，只训练后几层，防过拟合</td>
+        </tr>
+        <tr>
+          <td><code>augment</code></td>
+          <td>数据增强</td>
+          <td>默认开启，自动翻转、亮度调整，相当于"扩充"数据集</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>不同场景的推荐配置</h3>
+
+    <div class="card">
+      <h4 style="color: var(--accent-dark); margin-bottom: 12px;">🧪 样本极少（50 张以下）</h4>
+      <div class="code-block" style="margin: 0;">
+        <pre><span class="kw">yolo train</span> model=<span class="str">yolov8n.pt</span> data=<span class="str">dataset/data.yaml</span> \
+  epochs=<span class="num">30</span> batch=<span class="num">4</span> imgsz=<span class="num">640</span> patience=<span class="num">8</span> \
+  freeze=<span class="num">10</span> lr0=<span class="num">0.001</span>   <span class="cmt"># 冻结前10层 + 低学习率，防过拟合</span></pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4 style="color: var(--accent-dark); margin-bottom: 12px;">✅ 标准微调（100～300 张）</h4>
+      <div class="code-block" style="margin: 0;">
+        <pre><span class="kw">yolo train</span> model=<span class="str">yolov8n.pt</span> data=<span class="str">dataset/data.yaml</span> \
+  epochs=<span class="num">50</span> batch=<span class="num">8</span> imgsz=<span class="num">640</span> patience=<span class="num">10</span></pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4 style="color: var(--accent-dark); margin-bottom: 12px;">🚀 数据充足（500+ 张）</h4>
+      <div class="code-block" style="margin: 0;">
+        <pre><span class="kw">yolo train</span> model=<span class="str">yolov8s.pt</span> data=<span class="str">dataset/data.yaml</span> \
+  epochs=<span class="num">100</span> batch=<span class="num">16</span> imgsz=<span class="num">640</span> patience=<span class="num">15</span> \
+  lr0=<span class="num">0.005</span>   <span class="cmt"># 换 yolov8s（更大模型），效果更好</span></pre>
+      </div>
+    </div>
+
+    <div class="callout warn">
+      <div class="callout-icon">⚠️</div>
+      <div class="callout-body">
+        <div class="callout-title">训练中途被中断了怎么办？</div>
+        <div class="callout-text">
+          用 <code>resume=True</code> 恢复：<br/>
+          <code>yolo train resume model=runs/finetune/person_v1/weights/last.pt</code>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section id="s7">
+    <h2 class="section-title">
+      <span class="section-number">7</span>第五步：读懂训练结果
+    </h2>
+
+    <h3>训练过程输出解读</h3>
+    <div class="code-block">
+      <span class="code-label">训练日志（节选）</span>
+      <pre>      Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size
+       1/50      0.00G     1.8432     1.1204     1.3201         12        640
+      10/50      0.00G     1.2104     0.8012     1.1823         15        640
+      30/50      0.00G     0.8234     0.5612     0.9012         11        640
+      50/50      0.00G     0.7102     0.4891     0.8341         14        640
+
+Class     Images  Instances      Box(P          R      mAP50   mAP50-95)
+  all         20        145      0.912      0.887      0.931      0.612</pre>
+    </div>
+
+    <table>
+      <thead><tr><th>指标</th><th>含义</th><th>好的范围</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>box_loss</code></td>
+          <td>框位置误差（越小越好）</td>
+          <td>训练结束时应降到初始值的 40%～60%</td>
+        </tr>
+        <tr>
+          <td><code>cls_loss</code></td>
+          <td>分类误差（对单类别不重要）</td>
+          <td>趋势下降即可</td>
+        </tr>
+        <tr>
+          <td><code>P</code>（Precision）</td>
+          <td>检测到的框里有多少是真正的人（准确率）</td>
+          <td>越高越好，&gt;0.8 是好结果</td>
+        </tr>
+        <tr>
+          <td><code>R</code>（Recall）</td>
+          <td>所有真实的人里有多少被检测到了（召回率）</td>
+          <td>越高越好，&gt;0.8 是好结果</td>
+        </tr>
+        <tr>
+          <td><code>mAP50</code></td>
+          <td>主要评估指标：综合精度（IoU 阈值 0.5）</td>
+          <td><strong>&gt;0.85 = 优秀；0.7～0.85 = 良好；&lt;0.7 = 需改善</strong></td>
+        </tr>
+        <tr>
+          <td><code>mAP50-95</code></td>
+          <td>更严格的综合精度（多 IoU 阈值平均）</td>
+          <td>&gt;0.5 是好结果，人数计数场景关注 mAP50 更重要</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>训练结果文件在哪</h3>
+    <div class="code-block">
+      <pre><span class="fn">runs/finetune/person_v1/</span>
+├── <span class="fn">weights/</span>
+│   ├── <span class="str">best.pt</span>     <span class="cmt">← 这个！验证集上表现最好的权重，用这个</span>
+│   └── last.pt      <span class="cmt">← 最后一轮的权重（不一定是最好的）</span>
+├── results.csv      <span class="cmt">← 每轮的损失和精度数据</span>
+├── results.png      <span class="cmt">← 训练曲线图（用图片查看器打开）</span>
+├── confusion_matrix.png  <span class="cmt">← 混淆矩阵</span>
+└── val_batch0_pred.jpg   <span class="cmt">← 验证集预览图，直观看效果</span></pre>
+    </div>
+
+    <div class="callout tip">
+      <div class="callout-icon">💡</div>
+      <div class="callout-body">
+        <div class="callout-title">如何判断训练是否过拟合？</div>
+        <div class="callout-text">
+          打开 <code>results.png</code>，查看 <code>val/box_loss</code>（验证集损失）曲线：<br/>
+          · <strong>一直下降</strong> = 正常，训练还没结束<br/>
+          · <strong>先降后升</strong> = 过拟合了，使用 best.pt（它是升之前的最好结果）<br/>
+          · <strong>一直不降</strong> = 数据量太少或标注质量差，需要补充数据
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section id="s8">
+    <h2 class="section-title">
+      <span class="section-number">8</span>第六步：把新模型接入系统
+    </h2>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <div class="step-title">备份旧模型</div>
+          <div class="step-desc">
+            <code>cp backend/yolov8n.pt backend/yolov8n_backup.pt</code>
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <div class="step-title">替换模型权重</div>
+          <div class="step-desc">
+            <code>cp runs/finetune/person_v1/weights/best.pt backend/yolov8n.pt</code>
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <div class="step-title">重启后端服务</div>
+          <div class="step-desc">
+            停止并重启 uvicorn：<code>uvicorn main:app --reload --port 8003</code><br/>
+            后端用懒加载，重启后第一次请求时会自动加载新模型。
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <div class="step-title">用验证工具测试新模型</div>
+          <div class="step-desc">
+            打开「YOLO 模型验证与调参」工具，上传测试照片，对比新旧模型的识别效果和精度统计。
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-content">
+          <div class="step-title">效果不好？回滚</div>
+          <div class="step-desc">
+            <code>cp backend/yolov8n_backup.pt backend/yolov8n.pt</code> 然后重启后端。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout danger">
+      <div class="callout-icon">🔴</div>
+      <div class="callout-body">
+        <div class="callout-title">更换模型前必须重置 NMS 参数</div>
+        <div class="callout-text">
+          新模型可能有不同的置信度分布，之前在验证工具里调好的参数（conf_threshold、iou_threshold）需要重新验证调整。
+          不要直接用旧参数上生产，先用几张已知人数的照片验证效果。
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section id="s9">
+    <h2 class="section-title">
+      <span class="section-number">9</span>常见问题 FAQ
+    </h2>
+
+    <div class="card">
+      <h3 style="margin-top:0; color: var(--accent-dark);">Q：训练完了，mAP 比原来低了？</h3>
+      <p>通常是因为数据集太小（&lt;50 张）或训练集/验证集分布不均。可以：</p>
+      <ul>
+        <li>补充更多样的照片</li>
+        <li>确认标注质量（漏标、错标都会拉低 mAP）</li>
+        <li>加入 <code>freeze=10</code>，只微调后几层</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0; color: var(--accent-dark);">Q：CPU 训练太慢了，有没有免费 GPU？</h3>
+      <p>可以用 <strong>Google Colab 免费 GPU</strong>：</p>
+      <ol>
+        <li>打开 colab.research.google.com，新建笔记本</li>
+        <li>菜单 → 运行时 → 更改运行时类型 → GPU（T4）</li>
+        <li>上传数据集 zip，然后运行训练命令</li>
+        <li>下载 best.pt 到本地</li>
+      </ol>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0; color: var(--accent-dark);">Q：堆叠场景微调后还是不准，怎么办？</h3>
+      <p>YOLOv8 本身对极度堆叠的场景存在天然限制（多个高度重叠的框会被 NMS 合并）。进阶方案：</p>
+      <ul>
+        <li>训练时加大 NMS IoU 阈值数据增强：在训练命令加 <code>iou=0.3</code></li>
+        <li>换用 <strong>YOLOv8-Crowd</strong> 或 <strong>CrowdDet</strong> 等专门为密集人群设计的模型</li>
+        <li>或者换思路：从照片计人数换成"人群密度估计"（CSRNet / P2PNet），这类模型专门处理堆叠场景</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0; color: var(--accent-dark);">Q：只有几十张照片，值得训练吗？</h3>
+      <p>值得。但期望要合理：</p>
+      <ul>
+        <li>30～50 张能让模型"认识"你们的拍摄角度和场景，通常 mAP 提升 5%～15%</li>
+        <li>真正大幅提升（20%+）需要 100 张以上，且标注质量好</li>
+        <li>可以先用系统工具快速积累——每次业务中用到照片核对时，顺手保存几张，一个月后就有了大量训练数据</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0; color: var(--accent-dark);">Q：标注需要框住完整人体吗？半身、背影也要标吗？</h3>
+      <p>规则很简单：<strong>凡是你希望系统计为"1个人"的目标，就画一个框</strong>。</p>
+      <ul>
+        <li>半身：画半身框 ✅</li>
+        <li>背影：画框 ✅（模型见过背影就学会认背影）</li>
+        <li>极远景小点（小于整图面积 0.3%）：不用画，反正过滤掉 ✅</li>
+        <li>人形雕像/海报上的人：不画 ✅</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <section id="s10">
+    <h2 class="section-title">
+      <span class="section-number">10</span>关键参数速查表
+    </h2>
+
+    <table>
+      <thead>
+        <tr><th>场景</th><th>conf</th><th>iou_threshold (NMS)</th><th>min_bbox_ratio</th><th>imgsz</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>✅ 正常清晰，人物分散</td>
+          <td>0.45</td><td>0.45</td><td>0.008</td><td>640</td>
+        </tr>
+        <tr>
+          <td>👥 人群堆叠/密集</td>
+          <td>0.30</td><td><strong>0.25～0.35</strong></td><td>0.003</td><td>640</td>
+        </tr>
+        <tr>
+          <td>🌫️ 低质量/模糊/远景</td>
+          <td><strong>0.25</strong></td><td>0.45</td><td>0.004</td><td><strong>960</strong></td>
+        </tr>
+        <tr>
+          <td>🔍 高精度需求（宁漏勿错）</td>
+          <td>0.60</td><td>0.60</td><td>0.012</td><td>640</td>
+        </tr>
+        <tr>
+          <td>🎯 极端密集人群</td>
+          <td>0.25</td><td><strong>0.20</strong></td><td>0.002</td><td>960</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout tip">
+      <div class="callout-icon">🎯</div>
+      <div class="callout-body">
+        <div class="callout-title">最佳实践路线图</div>
+        <div class="callout-text">
+          <strong>阶段一（本周）：</strong>用「验证与调参」工具找到适合你们照片的最优参数配置，应用到「照片人数核对」工具。<br/>
+          <strong>阶段二（积累 50 张后）：</strong>导出数据集，用标准微调命令训练一次，替换模型，重新调参。<br/>
+          <strong>阶段三（积累 200 张后）：</strong>换 yolov8s.pt 基础模型重新微调，效果将有明显跃升。<br/>
+          <strong>持续迭代：</strong>每次遇到识别不准的照片，保存为训练样本，定期（每月）重新训练一次。
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr/>
+  <div class="footer">
+    智能工作台 · YOLO 微调扫盲指南 · 2026-05-14 · 仅供内部使用
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import json
 from typing import List, Optional, Dict, Any
 from datetime import date
 
@@ -80,6 +81,27 @@ def init_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(year, month)
         );
+
+        CREATE TABLE IF NOT EXISTS photo_checkin_records (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            checkin_id       INTEGER,
+            photo_filename   TEXT NOT NULL,
+            detected_count   INTEGER NOT NULL,
+            raw_count        INTEGER NOT NULL,
+            confidence_avg   REAL,
+            manual_count     INTEGER,
+            filter_config    TEXT,
+            note             TEXT,
+            status           TEXT NOT NULL DEFAULT 'pending',
+            created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (checkin_id) REFERENCES daily_checkin(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_photo_checkin_id
+            ON photo_checkin_records(checkin_id);
+
+        CREATE INDEX IF NOT EXISTS idx_photo_status
+            ON photo_checkin_records(status, created_at);
     """)
     # Migration: add output_filename if missing
     try:
@@ -370,6 +392,95 @@ def delete_consolidation(consolidation_id: int) -> Optional[Dict[str, Any]]:
     conn.commit()
     conn.close()
     return info
+
+
+# ──────────────────── Photo Checkin Records ────────────────────
+
+def get_sessions_by_date(check_date: str) -> List[Dict[str, Any]]:
+    conn = _get_conn()
+    rows = conn.execute(
+        """
+        SELECT id, coach_name, course_name, school_name,
+               start_time, end_time, actual_count, expected_count
+        FROM daily_checkin
+        WHERE check_date = ?
+        ORDER BY coach_name, start_time
+        """,
+        (check_date,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def save_photo_record(
+    checkin_id: Optional[int],
+    photo_filename: str,
+    detected_count: int,
+    raw_count: int,
+    confidence_avg: float,
+    filter_config: dict,
+    status: str = "pending",
+) -> int:
+    conn = _get_conn()
+    cur = conn.execute(
+        """
+        INSERT INTO photo_checkin_records
+            (checkin_id, photo_filename, detected_count, raw_count,
+             confidence_avg, filter_config, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            checkin_id, photo_filename, detected_count, raw_count,
+            confidence_avg, json.dumps(filter_config, ensure_ascii=False), status,
+        ),
+    )
+    conn.commit()
+    new_id = cur.lastrowid
+    conn.close()
+    return new_id
+
+
+def update_photo_record(record_id: int, manual_count: Optional[int], note: str, status: str) -> bool:
+    conn = _get_conn()
+    conn.execute(
+        """
+        UPDATE photo_checkin_records
+        SET manual_count = ?, note = ?, status = ?
+        WHERE id = ?
+        """,
+        (manual_count, note, status, record_id),
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_photo_records_by_checkin(checkin_id: int) -> List[Dict[str, Any]]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM photo_checkin_records WHERE checkin_id = ? ORDER BY created_at",
+        (checkin_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_photo_records_by_date(check_date: str) -> List[Dict[str, Any]]:
+    conn = _get_conn()
+    rows = conn.execute(
+        """
+        SELECT p.*,
+               d.coach_name, d.course_name, d.school_name,
+               d.actual_count, d.expected_count
+        FROM photo_checkin_records p
+        LEFT JOIN daily_checkin d ON p.checkin_id = d.id
+        WHERE d.check_date = ? OR (p.checkin_id IS NULL AND date(p.created_at) = ?)
+        ORDER BY p.created_at
+        """,
+        (check_date, check_date),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 # Auto-init on import

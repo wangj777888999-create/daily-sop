@@ -22,6 +22,157 @@ def _load_config() -> dict:
         return json.load(f)
 
 
+# Chinese → English column mapping for direct import
+COLUMN_MAP = {
+    "部门": "department",
+    "学校名称": "school_name",
+    "课程类型": "course_type",
+    "课程名称": "course_name",
+    "教练姓名": "coach_name",
+    "课程日期": "course_date",
+    "开课时间": "start_time",
+    "下课时间": "end_time",
+    "签到时间": "sign_in_time",
+    "签退时间": "sign_out_time",
+    "签到状态": "sign_status",
+    "实际上课人次": "actual_count",
+    "课程应到人次": "expected_count",
+    "确认收入": "confirmed_revenue",
+}
+
+
+def import_checkin(excel_bytes: bytes, check_date: str = None) -> dict:
+    """Import a single pre-formatted Excel directly into records.
+
+    The Excel should have Chinese column headers matching COLUMN_MAP.
+    Accepts both raw coach-checkin format (no finance columns) and
+    fully-processed output format (with finance columns).
+    """
+    import pandas as pd
+    from tools.course_types import load_all as ct_load_all
+
+    xls = pd.ExcelFile(io.BytesIO(excel_bytes))
+    sheet_name = xls.sheet_names[0]
+    raw = pd.read_excel(io.BytesIO(excel_bytes), sheet_name=sheet_name, header=None)
+
+    # Auto-detect header row: find the first row that contains at least 3 known column names
+    header_row_idx = None
+    for row_idx in range(min(8, len(raw))):
+        row_vals = set(str(v) for v in raw.iloc[row_idx].values if isinstance(v, str))
+        hits = sum(1 for k in COLUMN_MAP if k in row_vals)
+        if hits >= 3:
+            header_row_idx = row_idx
+            break
+
+    if header_row_idx is None:
+        available = ", ".join(str(v) for v in raw.iloc[0].values if isinstance(v, str))
+        raise ValueError(
+            f"无法识别列名，文件前几行未找到预期的中文列名。"
+            f"第一行内容: {available}。预期列名: {', '.join(COLUMN_MAP.keys())}"
+        )
+
+    # Skip rows above header, use header row as column names
+    raw.columns = raw.iloc[header_row_idx].values
+    df = raw.iloc[header_row_idx + 1:].reset_index(drop=True)
+
+    # Filter to school courses only (skip aggregate/other rows)
+    if "课程类型" in df.columns:
+        df = df[df["课程类型"] == "学校课程"]
+
+    if df.empty:
+        raise ValueError("文件中未找到「学校课程」类型的签到记录，请检查文件内容")
+
+    # Map columns and build records
+    records = []
+    for _, row in df.iterrows():
+        record = {
+            "check_date": check_date,
+            "department": "",
+            "school_name": "",
+            "course_type": "",
+            "course_name": "",
+            "coach_name": "",
+            "course_date": "",
+            "start_time": "",
+            "end_time": "",
+            "sign_in_time": "",
+            "sign_out_time": "",
+            "sign_status": "",
+            "actual_count": 0,
+            "expected_count": 0,
+            "confirmed_revenue": 0.0,
+        }
+        for cn, en in COLUMN_MAP.items():
+            if cn in df.columns:
+                val = row.get(cn)
+                if pd.isna(val):
+                    continue
+                if en in ("actual_count", "expected_count"):
+                    record[en] = int(float(val))
+                elif en == "confirmed_revenue":
+                    record[en] = float(val)
+                else:
+                    record[en] = str(val)
+
+        # Each record uses its own course_date as check_date; fallback to user-provided date
+        if record["course_date"]:
+            record["check_date"] = record["course_date"]
+        elif not record["check_date"]:
+            record["check_date"] = check_date
+
+        records.append(record)
+
+    if not check_date:
+        check_date = str(date.today())
+
+    # Generate output Excel from the records (normalized format)
+    cols_order = [
+        "部门", "学校名称", "课程类型", "课程名称", "教练姓名",
+        "实际上课人次", "课程应到人次", "确认收入",
+        "课程日期", "开课时间", "下课时间", "签到时间", "签退时间", "签到状态",
+    ]
+    en_to_cn = {v: k for k, v in COLUMN_MAP.items()}
+    out_data = []
+    for r in records:
+        out_row = {}
+        for cn in cols_order:
+            en = COLUMN_MAP.get(cn)
+            out_row[cn] = r.get(en, "") if en else ""
+        out_data.append(out_row)
+
+    out_df = pd.DataFrame(out_data, columns=cols_order)
+    excel_bytes_out = _generate_excel(out_df)
+
+    # Summary
+    dept_set = set(r["department"] for r in records if r["department"])
+    school_set = set(r["school_name"] for r in records if r["school_name"])
+    coach_set = set(r["coach_name"] for r in records if r["coach_name"])
+    non_gang = sum(1 for r in records if r["sign_status"] != "在岗")
+
+    # Check unmapped course types
+    unmapped_courses = []
+    try:
+        all_courses = set(r["course_name"] for r in records if r["course_name"])
+        ct_records = ct_load_all()
+        mapped = {r["课程名称"] for r in ct_records}
+        unmapped_courses = sorted(all_courses - mapped)
+    except Exception:
+        pass
+
+    return {
+        "records": records,
+        "excel_bytes": excel_bytes_out,
+        "summary": {
+            "total_records": len(records),
+            "departments": len(dept_set),
+            "schools": len(school_set),
+            "coaches": len(coach_set),
+            "non_岗_count": non_gang,
+        },
+        "unmapped_courses": unmapped_courses,
+    }
+
+
 def preview_files(coach_bytes: bytes, finance_bytes: bytes) -> dict:
     """Parse uploaded Excel bytes and return preview (first 50 rows + column validation)."""
     coach_df = pd.read_excel(io.BytesIO(coach_bytes), sheet_name="教练签到")

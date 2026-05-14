@@ -1,6 +1,9 @@
 /** 工具类型 */
 export type ToolKind = 'iframe' | 'vue'
 
+/** 工具所属业务板块 */
+export type ToolCategory = '校内' | '校外' | '通用'
+
 /** 单个工具的注册信息 */
 export interface Tool {
   /** 唯一标识 */
@@ -25,4 +28,6 @@ export interface Tool {
   iframeHeight?: number
   /** 是否启用，默认 true */
   enabled?: boolean
+  /** 所属业务板块 */
+  category?: ToolCategory
 }

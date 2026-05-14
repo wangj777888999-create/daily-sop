@@ -28,6 +28,8 @@ interface CheckinRecord {
 const step = ref<Step>('upload')
 const coachFile = ref<File | null>(null)
 const financeFile = ref<File | null>(null)
+const importFile = ref<File | null>(null)
+const importMode = ref(false)
 const checkDate = ref(new Date().toISOString().slice(0, 10))
 const loading = ref(false)
 const errorMsg = ref('')
@@ -42,6 +44,8 @@ const history = ref<any[]>([])
 // Review state
 const reviewRecords = ref<CheckinRecord[]>([])
 const reviewLoading = ref(false)
+const reviewYear = ref<number>(0)
+const reviewMonth = ref<number>(0)
 const filterCoach = ref('')
 const filterSchool = ref('')
 const filterStatus = ref('')
@@ -72,13 +76,16 @@ const statusSummary = computed(() => {
   return counts
 })
 
-function onFileSelect(event: Event, type: 'coach' | 'finance') {
+function onFileSelect(event: Event, type: 'coach' | 'finance' | 'import') {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
   if (type === 'coach') coachFile.value = file
-  else financeFile.value = file
+  else if (type === 'finance') financeFile.value = file
+  else importFile.value = file
 }
+
+const canImport = computed(() => importFile.value)
 
 const canPreview = computed(() => coachFile.value && financeFile.value)
 
@@ -128,6 +135,29 @@ async function doProcess() {
   }
 }
 
+async function doImport() {
+  if (!importFile.value) return
+  loading.value = true
+  errorMsg.value = ''
+  try {
+    const fd = new FormData()
+    fd.append('file', importFile.value)
+    fd.append('check_date', checkDate.value)
+    const res = await fetch(`${API}/import`, { method: 'POST', body: fd })
+    if (!res.ok) {
+      const err = await res.json()
+      throw new Error(err.detail || '导入失败')
+    }
+    processResult.value = await res.json()
+    step.value = 'result'
+    loadHistory()
+  } catch (e: any) {
+    errorMsg.value = e.message
+  } finally {
+    loading.value = false
+  }
+}
+
 function downloadResult() {
   if (!processResult.value) return
   window.open(`${API}/download/${processResult.value.batch_id}`, '_blank')
@@ -162,11 +192,33 @@ async function loadHistory() {
 
 async function enterReview(checkDateParam?: string) {
   const dt = checkDateParam || checkDate.value
+  reviewYear.value = 0
+  reviewMonth.value = 0
   reviewLoading.value = true
   errorMsg.value = ''
   successMsg.value = ''
   try {
     const res = await fetch(`${API}/records/${dt}`)
+    if (!res.ok) throw new Error('加载失败')
+    const data = await res.json()
+    reviewRecords.value = data.records || []
+    clearReviewFilters()
+    step.value = 'review'
+  } catch (e: any) {
+    errorMsg.value = e.message || '加载数据失败'
+  } finally {
+    reviewLoading.value = false
+  }
+}
+
+async function enterReviewByMonth(year: number, month: number) {
+  reviewYear.value = year
+  reviewMonth.value = month
+  reviewLoading.value = true
+  errorMsg.value = ''
+  successMsg.value = ''
+  try {
+    const res = await fetch(`${API}/records-by-month/${year}/${month}`)
     if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
     reviewRecords.value = data.records || []
@@ -268,9 +320,13 @@ function reset() {
   step.value = 'upload'
   coachFile.value = null
   financeFile.value = null
+  importFile.value = null
+  importMode.value = false
   preview.value = null
   processResult.value = null
   reviewRecords.value = []
+  reviewYear.value = 0
+  reviewMonth.value = 0
   errorMsg.value = ''
   successMsg.value = ''
   clearReviewFilters()
@@ -362,9 +418,51 @@ loadHistory()
             <input v-model="checkDate" type="date" class="border border-border rounded-lg px-3 py-1.5 text-sm" />
           </div>
 
-          <Button variant="primary" :disabled="!canPreview" :loading="loading" @click="doPreview">
+          <!-- Mode toggle -->
+          <div class="border-t border-border pt-4 mt-2">
+            <button
+              class="text-xs font-medium transition-colors flex items-center gap-1"
+              :style="importMode ? 'color:#9C8E82;' : 'color:#3D3530;'"
+              @click="importMode = !importMode"
+            >
+              <span v-if="importMode">◂ 返回标准上传</span>
+              <span v-else>直接导入已处理数据 ▸</span>
+            </button>
+          </div>
+
+          <!-- Direct import mode -->
+          <div v-if="importMode" class="flex flex-col gap-4">
+            <label class="border border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-accent transition-colors">
+              <input type="file" accept=".xlsx,.xls" class="hidden" @change="onFileSelect($event, 'import')" />
+              <div v-if="!importFile">
+                <p class="text-sm font-medium text-text-heading">已格式化的签到数据文件</p>
+                <p class="text-xs text-text-light mt-1">选择已经处理好的 Excel 文件直接导入</p>
+              </div>
+              <div v-else>
+                <p class="text-sm font-medium text-green-600">✓ {{ importFile.name }}</p>
+                <p class="text-xs text-text-light mt-1">{{ (importFile.size / 1024).toFixed(1) }} KB</p>
+              </div>
+            </label>
+            <Button variant="primary" :disabled="!canImport" :loading="loading" @click="doImport">
+              直接导入
+            </Button>
+          </div>
+
+          <!-- Normal upload buttons -->
+          <button
+            v-if="!importMode"
+            :disabled="!canPreview"
+            @click="doPreview"
+            class="px-[18px] py-2 text-[12px] rounded-lg font-medium select-none
+                   transition-all duration-150 ease-spring
+                   active:scale-[0.97] active:brightness-95
+                   bg-gradient-to-b from-accent to-accent-dark text-white
+                   border border-accent-dark/50 shadow-button-primary
+                   hover:brightness-105
+                   disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             预览数据
-          </Button>
+          </button>
 
           <!-- Quick access to existing data -->
           <div v-if="hasHistory" class="border-t border-border pt-4 mt-2">
@@ -486,7 +584,12 @@ loadHistory()
             <Button variant="primary" @click="downloadResult">
               下载格式化 Excel
             </Button>
-            <Button variant="secondary" @click="enterReview(processResult.check_date)">
+            <Button
+              variant="secondary"
+              @click="processResult.year
+                ? enterReviewByMonth(processResult.year, processResult.month)
+                : enterReview(processResult.check_date)"
+            >
               查看 / 编辑数据
             </Button>
           </div>
@@ -497,7 +600,9 @@ loadHistory()
           <!-- Summary bar -->
           <div class="flex items-center justify-between rounded-lg px-4 py-2.5" style="background:#f5f2ef;">
             <div class="flex items-center gap-4 flex-wrap">
-              <span class="text-sm font-semibold" style="color:#3D3530;">{{ checkDate }} 签到数据审查</span>
+              <span class="text-sm font-semibold" style="color:#3D3530;">
+                {{ reviewYear ? reviewYear + '年' + reviewMonth + '月' : checkDate }} 签到数据审查
+              </span>
               <span class="text-xs" style="color:#9C8E82;">共 {{ reviewRecords.length }} 条</span>
               <div class="flex items-center gap-1.5 flex-wrap">
                 <span v-for="(cnt, st) in statusSummary" :key="st"

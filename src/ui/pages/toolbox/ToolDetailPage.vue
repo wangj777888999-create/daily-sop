@@ -21,6 +21,8 @@ const vueComponent = computed(() => {
     'offcampus-monthly': () => import('@/ui/pages/tools/OffcampusMonthly.vue'),
     'offcampus-cumulative': () => import('@/ui/pages/tools/OffcampusCumulative.vue'),
     'course-types': () => import('@/ui/pages/tools/CourseTypes.vue'),
+    'photo-checkin': () => import('@/ui/pages/tools/PhotoCheckin.vue'),
+    'yolo-validation': () => import('@/ui/pages/tools/YoloValidation.vue'),
   }
   const loader = componentMap[tool.value.id]
   return loader ? defineAsyncComponent(loader) : null

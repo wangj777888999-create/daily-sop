@@ -7,7 +7,7 @@ import io
 import json
 import os
 
-from tools.daily_checkin import preview_files, process_files
+from tools.daily_checkin import preview_files, process_files, import_checkin
 from tools.db import (
     save_checkin_records, get_batches, get_available_months, get_checkin_by_month,
     get_checkin_by_date, update_checkin_record, delete_checkin_record,
@@ -92,6 +92,53 @@ async def daily_checkin_process(
     }
 
 
+@router.post("/tools/daily-checkin/import")
+async def daily_checkin_import(
+    file: UploadFile = File(...),
+    check_date: str = Form(""),
+):
+    """Direct import of a single pre-formatted check-in Excel (skip the parse-and-merge pipeline)."""
+    excel_bytes = await file.read()
+
+    if not check_date:
+        check_date = str(date.today())
+
+    try:
+        result = import_checkin(excel_bytes, check_date)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"导入失败: {str(e)}")
+
+    batch_info = {
+        "batch_date": check_date,
+        "coach_file": file.filename or "",
+        "finance_file": "",
+    }
+
+    os.makedirs(CHECKIN_OUTPUT_DIR, exist_ok=True)
+    output_filename = f"{check_date}_教练签到.xlsx"
+    output_path = os.path.join(CHECKIN_OUTPUT_DIR, output_filename)
+    with open(output_path, "wb") as f:
+        f.write(result["excel_bytes"])
+    batch_info["output_filename"] = output_filename
+
+    batch_id = save_checkin_records(result["records"], batch_info)
+
+    # Year/month for frontend month-view navigation
+    parts = check_date.split("-")
+    import_year = int(parts[0])
+    import_month = int(parts[1])
+
+    return {
+        "batch_id": batch_id,
+        "record_count": len(result["records"]),
+        "check_date": check_date,
+        "year": import_year,
+        "month": import_month,
+        "summary": result["summary"],
+        "unmapped_courses": result.get("unmapped_courses", []),
+    }
+
+
 @router.get("/tools/daily-checkin/download/{batch_id}")
 async def daily_checkin_download(batch_id: int):
     batches = get_batches(limit=100)
@@ -162,6 +209,12 @@ async def daily_checkin_available_months():
 async def daily_checkin_records(check_date: str):
     records = get_checkin_by_date(check_date)
     return {"check_date": check_date, "records": records, "count": len(records)}
+
+
+@router.get("/tools/daily-checkin/records-by-month/{year}/{month}")
+async def daily_checkin_records_by_month(year: int, month: int):
+    records = get_checkin_by_month(year, month)
+    return {"year": year, "month": month, "records": records, "count": len(records)}
 
 
 @router.put("/tools/daily-checkin/record/{record_id}")
