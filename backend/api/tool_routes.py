@@ -15,10 +15,17 @@ from tools.db import (
     save_monthly_analysis, get_monthly_analyses, delete_batch, delete_monthly_analysis,
     save_consolidation, get_consolidation, update_consolidation_status,
     get_consolidations, delete_consolidation,
+    save_offcampus_coach_stats, delete_offcampus_coach_stats,
+    get_offcampus_available_months, query_offcampus_cumulative,
+    save_cumulative_report, get_cumulative_reports, delete_cumulative_report,
 )
-from tools.campus_monthly import preview_monthly, process_monthly, UPLOAD_DIR
+from tools.campus_monthly import (
+    preview_monthly, process_monthly, UPLOAD_DIR,
+    preview_monthly_from_file, process_monthly_from_file,
+)
 from tools.offcampus_monthly import preview_offcampus, process_offcampus
 from tools.offcampus_monthly import UPLOAD_DIR as OFFCAMPUS_UPLOAD_DIR
+from tools.offcampus_cumulative import process_offcampus_cumulative
 from tools.checkin_consolidation import (
     load_month_records, save_consolidation_data, load_consolidation_data, export_excel,
 )
@@ -27,11 +34,32 @@ from tools.course_types import (
     delete_record as ct_delete, import_from_excel as ct_import, export_to_excel as ct_export,
     get_type_options as ct_options,
 )
+from tools.discount_rate import preview_discount_rate, generate_discount_rate_excel
+from tools.discount_rate import load_course_configs, save_course_configs
+from tools.discount_rate import UPLOAD_DIR as DISCOUNT_RATE_OUTPUT_DIR
+from tools.monthly_store import (
+    save_monthly_file, get_monthly_file_bytes,
+    get_monthly_status, delete_monthly_file, list_monthly_periods,
+    FILE_KEYS,
+)
+from tools.db import upsert_monthly_upload_meta  # noqa: F401 (imported for side-effect init)
 
 CHECKIN_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "checkin_output")
 CONSOLIDATION_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "consolidation_output")
 
 router = APIRouter()
+
+
+async def _resolve_bytes(
+    upload: Optional[UploadFile],
+    year: int, month: int, key: str,
+) -> Optional[bytes]:
+    """上传文件优先；未上传则从月度存储读取；都无则返回 None"""
+    if upload and upload.filename:
+        return await upload.read()
+    if year and month:
+        return get_monthly_file_bytes(year, month, key)
+    return None
 
 
 # ──────────────────── Daily Check-in ────────────────────
@@ -247,7 +275,22 @@ async def daily_checkin_restore_record(body: dict):
 async def campus_monthly_preview(
     year: int = Form(...),
     month: int = Form(...),
+    mode: str = Form("sqlite"),
+    skjl_file: Optional[UploadFile] = File(None),
 ):
+    if mode == "file":
+        skjl_bytes = await _resolve_bytes(skjl_file, year, month, "skjl")
+        if not skjl_bytes:
+            raise HTTPException(status_code=400, detail="文件模式需要上传上课记录，或先在「月度数据管理」中存储")
+        try:
+            preview = preview_monthly_from_file(skjl_bytes)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        preview["year"] = year
+        preview["month"] = month
+        preview["data_source"] = "file"
+        return preview
+
     consolidation = get_consolidation(year, month)
     if consolidation and consolidation["status"] == "confirmed":
         records = load_consolidation_data(consolidation["filename"])
@@ -264,26 +307,36 @@ async def campus_monthly_preview(
 async def campus_monthly_process(
     year: int = Form(...),
     month: int = Form(...),
+    mode: str = Form("sqlite"),
+    skjl_file: Optional[UploadFile] = File(None),
     finance_file: Optional[UploadFile] = File(None),
     course_type_file: Optional[UploadFile] = File(None),
     refund_file: Optional[UploadFile] = File(None),
 ):
-    consolidation = get_consolidation(year, month)
-    if consolidation and consolidation["status"] == "confirmed":
-        records = load_consolidation_data(consolidation["filename"])
-    else:
-        records = get_checkin_by_month(year, month)
-    if not records:
-        raise HTTPException(status_code=400, detail=f"{year}年{month}月无签到数据，请先使用每日签到工具积累数据")
-
-    finance_bytes = await finance_file.read() if finance_file and finance_file.filename else None
+    finance_bytes = await _resolve_bytes(finance_file, year, month, "finance")
     course_type_bytes = await course_type_file.read() if course_type_file and course_type_file.filename else None
-    refund_bytes = await refund_file.read() if refund_file and refund_file.filename else None
+    refund_bytes = await _resolve_bytes(refund_file, year, month, "refund")
 
-    try:
-        result = process_monthly(year, month, records, finance_bytes, course_type_bytes, refund_bytes)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"处理失败: {str(e)}")
+    if mode == "file":
+        skjl_bytes = await _resolve_bytes(skjl_file, year, month, "skjl")
+        if not skjl_bytes:
+            raise HTTPException(status_code=400, detail="文件模式需要上传上课记录，或先在「月度数据管理」中存储")
+        try:
+            result = process_monthly_from_file(year, month, skjl_bytes, finance_bytes, course_type_bytes, refund_bytes)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"处理失败: {str(e)}")
+    else:
+        consolidation = get_consolidation(year, month)
+        if consolidation and consolidation["status"] == "confirmed":
+            records = load_consolidation_data(consolidation["filename"])
+        else:
+            records = get_checkin_by_month(year, month)
+        if not records:
+            raise HTTPException(status_code=400, detail=f"{year}年{month}月无签到数据，请先使用每日签到工具积累数据")
+        try:
+            result = process_monthly(year, month, records, finance_bytes, course_type_bytes, refund_bytes)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"处理失败: {str(e)}")
 
     analysis_id = save_monthly_analysis({
         "year": year, "month": month,
@@ -468,11 +521,15 @@ async def checkin_consolidation_delete(consolidation_id: int):
 
 @router.post("/tools/offcampus-monthly/preview")
 async def offcampus_monthly_preview(
-    skjl_file: UploadFile = File(...),
-    cw_file: UploadFile = File(...),
+    year: int = Form(0),
+    month: int = Form(0),
+    skjl_file: Optional[UploadFile] = File(None),
+    cw_file: Optional[UploadFile] = File(None),
 ):
-    skjl_bytes = await skjl_file.read()
-    cw_bytes = await cw_file.read()
+    skjl_bytes = await _resolve_bytes(skjl_file, year, month, "skjl")
+    cw_bytes = await _resolve_bytes(cw_file, year, month, "finance")
+    if not skjl_bytes or not cw_bytes:
+        raise HTTPException(status_code=400, detail="缺少上课记录或财务明细文件，请上传文件或先在「月度数据管理」中存储")
     try:
         return preview_offcampus(skjl_bytes, cw_bytes)
     except Exception as e:
@@ -481,17 +538,23 @@ async def offcampus_monthly_preview(
 
 @router.post("/tools/offcampus-monthly/process")
 async def offcampus_monthly_process(
-    skjl_file: UploadFile = File(...),
-    xwksf_file: UploadFile = File(...),
-    cw_file: UploadFile = File(...),
-    cdf_file: UploadFile = File(...),
+    year: int = Form(0),
+    month: int = Form(0),
+    skjl_file: Optional[UploadFile] = File(None),
+    xwksf_file: Optional[UploadFile] = File(None),
+    cw_file: Optional[UploadFile] = File(None),
+    cdf_file: Optional[UploadFile] = File(None),
     last_month_file: Optional[UploadFile] = File(None),
 ):
-    skjl_bytes = await skjl_file.read()
-    xwksf_bytes = await xwksf_file.read()
-    cw_bytes = await cw_file.read()
-    cdf_bytes = await cdf_file.read()
-    last_month_bytes = await last_month_file.read() if last_month_file and last_month_file.filename else None
+    skjl_bytes = await _resolve_bytes(skjl_file, year, month, "skjl")
+    xwksf_bytes = await _resolve_bytes(xwksf_file, year, month, "teaching_fee")
+    cw_bytes = await _resolve_bytes(cw_file, year, month, "finance")
+    cdf_bytes = await _resolve_bytes(cdf_file, year, month, "venue_fee")
+    last_month_bytes = await _resolve_bytes(last_month_file, year, month, "last_month")
+
+    missing = [n for n, b in [("上课记录", skjl_bytes), ("课时费", xwksf_bytes), ("财务明细", cw_bytes), ("场地费", cdf_bytes)] if not b]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"缺少必要文件：{'、'.join(missing)}，请上传文件或先在「月度数据管理」中存储")
 
     try:
         result = process_offcampus(skjl_bytes, xwksf_bytes, cw_bytes, cdf_bytes, last_month_bytes)
@@ -507,9 +570,11 @@ async def offcampus_monthly_process(
         f.write(result["excel_bytes"])
 
     summary = result["summary"]
+    year = year or date.today().year
+    month = month or date.today().month
     analysis_id = save_monthly_analysis({
-        "year": date.today().year,
-        "month": date.today().month,
+        "year": year,
+        "month": month,
         "analysis_type": "offcampus",
         "filename": filename,
         "record_count": summary["total_records"],
@@ -517,6 +582,10 @@ async def offcampus_monthly_process(
         "coach_count": summary["coach_count"],
         "sheets": json.dumps(result["sheets"], ensure_ascii=False),
     })
+
+    # 存储每位教练的原始统计数据，供累积分析使用
+    if result.get("coach_stats"):
+        save_offcampus_coach_stats(analysis_id, year, month, result["coach_stats"])
 
     return {
         "id": analysis_id,
@@ -563,6 +632,8 @@ async def offcampus_monthly_delete(analysis_id: int):
         filepath = os.path.join(OFFCAMPUS_UPLOAD_DIR, filename)
         if os.path.exists(filepath):
             os.remove(filepath)
+
+    delete_offcampus_coach_stats(analysis_id)
 
     return {"deleted": True, "analysis_id": analysis_id}
 
@@ -621,3 +692,263 @@ async def course_types_export():
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
     )
+
+
+# ──────────────────── Offcampus Cumulative ────────────────────
+
+@router.get("/tools/offcampus-cumulative/available-months")
+async def offcampus_cumulative_months():
+    return get_offcampus_available_months()
+
+
+@router.post("/tools/offcampus-cumulative/process")
+async def offcampus_cumulative_process(
+    year_from: int = Form(...),
+    month_from: int = Form(...),
+    year_to: int = Form(...),
+    month_to: int = Form(...),
+):
+    raw = query_offcampus_cumulative(year_from, month_from, year_to, month_to)
+    if not raw:
+        raise HTTPException(status_code=400, detail="所选月份范围内没有数据，请先完成校外月度分析")
+
+    try:
+        excel_bytes, summary = process_offcampus_cumulative(raw)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"生成报表失败: {str(e)}")
+
+    now_str = date.today().strftime("%Y%m%d")
+    filename = f"{now_str}_{year_from}年{month_from}月-{year_to}年{month_to}月_校外累积分析.xlsx"
+    output_dir = OFFCAMPUS_UPLOAD_DIR
+    os.makedirs(output_dir, exist_ok=True)
+    filepath = os.path.join(output_dir, filename)
+    with open(filepath, "wb") as f:
+        f.write(excel_bytes)
+
+    report_id = save_cumulative_report({
+        "year_from": year_from, "month_from": month_from,
+        "year_to": year_to, "month_to": month_to,
+        "filename": filename,
+        "campus_count": summary["campus_count"],
+        "coach_count": summary["coach_count"],
+    })
+
+    return {
+        "id": report_id,
+        "filename": filename,
+        "summary": summary,
+    }
+
+
+@router.get("/tools/offcampus-cumulative/download/{report_id}")
+async def offcampus_cumulative_download(report_id: int):
+    reports = get_cumulative_reports(limit=200)
+    report = next((r for r in reports if r["id"] == report_id), None)
+    if not report:
+        raise HTTPException(status_code=404, detail="报表记录不存在")
+
+    filepath = os.path.join(OFFCAMPUS_UPLOAD_DIR, report["filename"])
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="文件不存在，请重新生成")
+
+    with open(filepath, "rb") as f:
+        excel_bytes = f.read()
+
+    return StreamingResponse(
+        io.BytesIO(excel_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(report['filename'])}"},
+    )
+
+
+@router.get("/tools/offcampus-cumulative/history")
+async def offcampus_cumulative_history(limit: int = Query(50, ge=1, le=200)):
+    return get_cumulative_reports(limit)
+
+
+@router.delete("/tools/offcampus-cumulative/analysis/{report_id}")
+async def offcampus_cumulative_delete(report_id: int):
+    report = delete_cumulative_report(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="报表记录不存在")
+
+    filename = report.get("filename", "")
+    if filename:
+        filepath = os.path.join(OFFCAMPUS_UPLOAD_DIR, filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+
+    return {"deleted": True, "report_id": report_id}
+
+
+# ──────────────────── Discount Rate Calculator ────────────────────
+
+@router.post("/tools/discount-rate/preview")
+async def discount_rate_preview(
+    year: int = Form(0),
+    month: int = Form(0),
+    file: Optional[UploadFile] = File(None),
+    exclude_keywords: str = Form("假期班/私教/乒乓球"),
+    exclude_dates: str = Form("[]"),
+    threshold_basketball: int = Form(8),
+    threshold_football: int = Form(10),
+    course_edits: str = Form("{}"),
+):
+    file_bytes = await _resolve_bytes(file, year, month, "skjl")
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="请上传上课记录文件，或先在「月度数据管理」中存储")
+    keywords = [k.strip() for k in exclude_keywords.split("/") if k.strip()] if exclude_keywords else []
+    dates = json.loads(exclude_dates)
+    edits = json.loads(course_edits)
+    try:
+        return preview_discount_rate(
+            file_bytes, keywords, dates,
+            threshold_basketball, threshold_football, edits,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"处理失败: {str(e)}")
+
+
+@router.post("/tools/discount-rate/generate")
+async def discount_rate_generate(
+    year: int = Form(0),
+    month: int = Form(0),
+    file: Optional[UploadFile] = File(None),
+    exclude_keywords: str = Form("假期班/私教/乒乓球"),
+    exclude_dates: str = Form("[]"),
+    threshold_basketball: int = Form(8),
+    threshold_football: int = Form(10),
+    course_edits: str = Form("{}"),
+):
+    file_bytes = await _resolve_bytes(file, year, month, "skjl")
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="请上传上课记录文件，或先在「月度数据管理」中存储")
+    keywords = [k.strip() for k in exclude_keywords.split("/") if k.strip()] if exclude_keywords else []
+    dates = json.loads(exclude_dates)
+    edits = json.loads(course_edits)
+    try:
+        result = generate_discount_rate_excel(
+            file_bytes, keywords, dates,
+            threshold_basketball, threshold_football, edits,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"处理失败: {str(e)}")
+
+    now_str = date.today().strftime("%Y%m%d")
+    filename = f"{now_str}_课时费折扣率.xlsx"
+    os.makedirs(DISCOUNT_RATE_OUTPUT_DIR, exist_ok=True)
+    filepath = os.path.join(DISCOUNT_RATE_OUTPUT_DIR, filename)
+    with open(filepath, "wb") as f:
+        f.write(result["excel_bytes"])
+
+    summary = result["summary"]
+    analysis_id = save_monthly_analysis({
+        "year": date.today().year,
+        "month": date.today().month,
+        "analysis_type": "discount_rate",
+        "filename": filename,
+        "record_count": summary["raw_count"],
+        "department_count": summary["course_count"],
+        "coach_count": summary["coach_count"],
+        "sheets": json.dumps(["班级汇总", "教练汇总"], ensure_ascii=False),
+    })
+
+    return {
+        "id": analysis_id,
+        "filename": filename,
+        "level1": result["level1"],
+        "level2": result["level2"],
+        "summary": summary,
+    }
+
+
+@router.get("/tools/discount-rate/download/{analysis_id}")
+async def discount_rate_download(analysis_id: int):
+    analyses = get_monthly_analyses("discount_rate", limit=200)
+    analysis = next((a for a in analyses if a["id"] == analysis_id), None)
+    if not analysis:
+        raise HTTPException(status_code=404, detail="分析记录不存在")
+
+    filepath = os.path.join(DISCOUNT_RATE_OUTPUT_DIR, analysis["filename"])
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="文件不存在，请重新生成")
+
+    with open(filepath, "rb") as f:
+        excel_bytes = f.read()
+
+    return StreamingResponse(
+        io.BytesIO(excel_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(analysis['filename'])}"},
+    )
+
+
+@router.get("/tools/discount-rate/history")
+async def discount_rate_history(limit: int = Query(50, ge=1, le=200)):
+    return get_monthly_analyses("discount_rate", limit)
+
+
+@router.delete("/tools/discount-rate/analysis/{analysis_id}")
+async def discount_rate_delete(analysis_id: int):
+    analysis = delete_monthly_analysis(analysis_id)
+    if not analysis:
+        raise HTTPException(status_code=404, detail="分析记录不存在")
+
+    filename = analysis.get("filename", "")
+    if filename:
+        filepath = os.path.join(DISCOUNT_RATE_OUTPUT_DIR, filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+
+    return {"deleted": True, "analysis_id": analysis_id}
+
+
+# ──────────────────── Discount Rate Course Configs ────────────────────
+
+@router.get("/tools/discount-rate/configs")
+async def discount_rate_configs():
+    return load_course_configs()
+
+
+@router.put("/tools/discount-rate/configs")
+async def discount_rate_save_configs(body: dict):
+    """body: { "课程名": { "申请人数": "15", "教练": "张三" }, ... }"""
+    count = save_course_configs(body)
+    return {"saved": True, "count": count}
+
+
+# ──────────────────── Monthly Data Store ────────────────────
+
+@router.post("/tools/monthly-data/upload")
+async def monthly_data_upload(
+    year: int = Form(...),
+    month: int = Form(...),
+    file_key: str = Form(...),
+    file: UploadFile = File(...),
+):
+    if file_key not in FILE_KEYS:
+        raise HTTPException(status_code=400, detail=f"未知文件类型: {file_key}")
+    data = await file.read()
+    try:
+        result = save_monthly_file(year, month, file_key, file.filename or file_key, data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+@router.get("/tools/monthly-data/status/{year}/{month}")
+async def monthly_data_status(year: int, month: int):
+    return get_monthly_status(year, month)
+
+
+@router.get("/tools/monthly-data/periods")
+async def monthly_data_periods():
+    return list_monthly_periods()
+
+
+@router.delete("/tools/monthly-data/{year}/{month}/{file_key}")
+async def monthly_data_delete(year: int, month: int, file_key: str):
+    if file_key not in FILE_KEYS:
+        raise HTTPException(status_code=400, detail=f"未知文件类型: {file_key}")
+    deleted = delete_monthly_file(year, month, file_key)
+    return {"deleted": deleted}

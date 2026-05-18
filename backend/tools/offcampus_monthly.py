@@ -101,11 +101,36 @@ def _load_config() -> dict:
         return json.load(f)
 
 
-def _read_excel(data: bytes, sheet_name: str = "Sheet1") -> pd.DataFrame:
-    try:
-        return pd.read_excel(io.BytesIO(data), sheet_name=sheet_name, engine="openpyxl")
-    except Exception:
-        return pd.read_excel(io.BytesIO(data), sheet_name=sheet_name, engine="xlrd")
+# 期望列名 — 用于自动检测表头行
+_CW_EXPECTED_COLS = {"学员类型", "学员姓名", "课程名称", "课程单价", "上课日期", "上课时间", "教练"}
+_SKJL_EXPECTED_COLS = {"课程名称", "上课信息", "状态"}
+
+
+def _detect_header_row(expected_cols: set, raw_df: pd.DataFrame) -> int:
+    """扫描前 5 行，返回包含最多期望列名的行索引"""
+    best_idx, best_count = 0, 0
+    for i in range(min(len(raw_df), 5)):
+        row_vals = {str(v).strip() for v in raw_df.iloc[i].values if pd.notna(v)}
+        count = len(expected_cols & row_vals)
+        if count > best_count:
+            best_count = count
+            best_idx = i
+    return best_idx
+
+
+def _read_excel(data: bytes, sheet_name: str = "Sheet1", expected_cols: set = None) -> pd.DataFrame:
+    engines = ["openpyxl", "xlrd"]
+    for engine in engines:
+        try:
+            if expected_cols:
+                preview = pd.read_excel(io.BytesIO(data), sheet_name=sheet_name, header=None, nrows=5, engine=engine)
+                header_idx = _detect_header_row(expected_cols, preview)
+                return pd.read_excel(io.BytesIO(data), sheet_name=sheet_name, header=header_idx, engine=engine)
+            else:
+                return pd.read_excel(io.BytesIO(data), sheet_name=sheet_name, engine=engine)
+        except Exception:
+            continue
+    raise ValueError(f"无法读取 Excel 文件（sheet: {sheet_name}）")
 
 
 # ──────────────────── 子函数 ────────────────────
@@ -205,7 +230,14 @@ def calculate_attendance_rate(combined: pd.DataFrame, xwskjl_copy: pd.DataFrame)
         lambda x: _safe_div_str(x[COL_ATTENDED_COUNT], x[COL_TOTAL_EXPECTED]), axis=1
     )
 
-    combined = pd.merge(combined, attendance[[COL_CAMPUS_COACH, COL_ATTENDANCE_RATE]], on=COL_CAMPUS_COACH, how="left")
+    combined = pd.merge(
+        combined,
+        attendance[[COL_CAMPUS_COACH, COL_ATTENDANCE_RATE, COL_ATTENDED_COUNT, COL_TOTAL_EXPECTED]],
+        on=COL_CAMPUS_COACH,
+        how="left",
+    )
+    combined[COL_ATTENDED_COUNT] = combined[COL_ATTENDED_COUNT].fillna(0)
+    combined[COL_TOTAL_EXPECTED] = combined[COL_TOTAL_EXPECTED].fillna(0)
     return combined
 
 
@@ -598,6 +630,23 @@ def _generate_excel(combined: pd.DataFrame, df: pd.DataFrame) -> bytes:
 
 # ──────────────────── 总函数 ────────────────────
 
+def _extract_coach_stats(combined: pd.DataFrame) -> List[dict]:
+    """从汇总前的 combined 提取每位教练的原始统计数据，供累积分析存库"""
+    rows = []
+    for _, row in combined.iterrows():
+        rows.append({
+            "campus": str(row.get(COL_CAMPUS, "") or ""),
+            "coach": str(row.get(COL_COACH, "") or ""),
+            "lessons": int(row.get(COL_CLASS_COUNT, 0) or 0),
+            "actual_attendance": int(row.get(COL_ATTENDED_COUNT, 0) or 0),
+            "expected_attendance": int(row.get(COL_TOTAL_EXPECTED, 0) or 0),
+            "revenue": float(row.get(COL_CONFIRMED_REVENUE, 0) or 0),
+            "site_cost": float(row.get(COL_VENUE_FEE, 0) or 0),
+            "teaching_fee": float(row.get(COL_TEACHING_FEE, 0) or 0),
+        })
+    return rows
+
+
 def _run_analysis(
     xwskjl: pd.DataFrame,
     xnskjl: pd.DataFrame,
@@ -625,6 +674,8 @@ def _run_analysis(
     combined = site_cost(combined, cdf_bytes, xwskjl, last_month_ana)
     combined = combined[~combined[COL_CAMPUS].str.contains(PINGPONG)].copy()
 
+    coach_stats = _extract_coach_stats(combined)
+
     summary_rows = combined.groupby(COL_CAMPUS, group_keys=False).apply(
         lambda g: summarize_campus(g, xwskjl_copy, last_month_ana)
     ).reset_index(drop=True).fillna(" ")
@@ -638,7 +689,7 @@ def _run_analysis(
         [COL_CAMPUS, COL_CONFIRMED_REVENUE], ascending=[True, True]
     ).reset_index(drop=True)
 
-    return combined, df
+    return combined, df, coach_stats
 
 
 # ──────────────────── 公开 API ────────────────────
@@ -648,8 +699,8 @@ def preview_offcampus(skjl_bytes: bytes, cw_bytes: bytes) -> dict:
     config = _load_config()
     outside_keywords = config["tools"]["outside_keywords"]
 
-    skjl = _read_excel(skjl_bytes)
-    cw = _read_excel(cw_bytes, sheet_name="财务")
+    skjl = _read_excel(skjl_bytes, expected_cols=_SKJL_EXPECTED_COLS)
+    cw = _read_excel(cw_bytes, sheet_name="财务", expected_cols=_CW_EXPECTED_COLS)
 
     xwskjl, xnskjl = skjl_separate(skjl, cw, outside_keywords)
 
@@ -674,9 +725,9 @@ def process_offcampus(
     outside_keywords = config["tools"]["outside_keywords"]
     off_campus_coaches = config["tools"]["offcampus_coaches"]
 
-    skjl = _read_excel(skjl_bytes)
+    skjl = _read_excel(skjl_bytes, expected_cols=_SKJL_EXPECTED_COLS)
     xwksf = _read_excel(xwksf_bytes)
-    cw = _read_excel(cw_bytes, sheet_name="财务")
+    cw = _read_excel(cw_bytes, sheet_name="财务", expected_cols=_CW_EXPECTED_COLS)
 
     xwskjl, xnskjl = skjl_separate(skjl, cw, outside_keywords)
 
@@ -687,7 +738,7 @@ def process_offcampus(
             COL_CAMPUS, COL_COACH, COL_VENUE_FEE, COL_STUDENT_COUNT, COL_S3_VENUE_COST
         ])
 
-    combined, df = _run_analysis(xwskjl, xnskjl, xwksf, cw, cdf_bytes, off_campus_coaches, last_month_ana)
+    combined, df, coach_stats = _run_analysis(xwskjl, xnskjl, xwksf, cw, cdf_bytes, off_campus_coaches, last_month_ana)
 
     excel_bytes = _generate_excel(combined, df)
 
@@ -707,4 +758,5 @@ def process_offcampus(
             "coach_count": len(non_summary[COL_COACH].unique()) if len(non_summary) > 0 else 0,
             "total_revenue": float(non_summary[COL_CONFIRMED_REVENUE].sum()) if len(non_summary) > 0 else 0,
         },
+        "coach_stats": coach_stats,
     }

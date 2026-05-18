@@ -102,6 +102,55 @@ def init_db():
 
         CREATE INDEX IF NOT EXISTS idx_photo_status
             ON photo_checkin_records(status, created_at);
+
+        CREATE TABLE IF NOT EXISTS offcampus_coach_stats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            analysis_id INTEGER NOT NULL,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            campus TEXT NOT NULL,
+            coach TEXT NOT NULL,
+            lessons INTEGER DEFAULT 0,
+            actual_attendance INTEGER DEFAULT 0,
+            expected_attendance INTEGER DEFAULT 0,
+            revenue REAL DEFAULT 0,
+            site_cost REAL DEFAULT 0,
+            teaching_fee REAL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (analysis_id) REFERENCES monthly_analyses(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_offcampus_stats_analysis
+            ON offcampus_coach_stats(analysis_id);
+        CREATE INDEX IF NOT EXISTS idx_offcampus_stats_year_month
+            ON offcampus_coach_stats(year, month);
+
+        CREATE TABLE IF NOT EXISTS offcampus_cumulative_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            year_from INTEGER NOT NULL,
+            month_from INTEGER NOT NULL,
+            year_to INTEGER NOT NULL,
+            month_to INTEGER NOT NULL,
+            filename TEXT,
+            campus_count INTEGER DEFAULT 0,
+            coach_count INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS monthly_upload_meta (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            file_key TEXT NOT NULL,
+            original_name TEXT NOT NULL,
+            stored_path TEXT NOT NULL,
+            file_size INTEGER DEFAULT 0,
+            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(year, month, file_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_monthly_upload_ym
+            ON monthly_upload_meta(year, month);
     """)
     # Migration: add output_filename if missing
     try:
@@ -479,6 +528,159 @@ def get_photo_records_by_date(check_date: str) -> List[Dict[str, Any]]:
         """,
         (check_date, check_date),
     ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ──────────────────── Offcampus Cumulative ────────────────────
+
+def save_offcampus_coach_stats(analysis_id: int, year: int, month: int, stats_list: List[Dict[str, Any]]) -> None:
+    conn = _get_conn()
+    cur = conn.cursor()
+    for s in stats_list:
+        cur.execute("""
+            INSERT INTO offcampus_coach_stats
+                (analysis_id, year, month, campus, coach, lessons, actual_attendance, expected_attendance, revenue, site_cost, teaching_fee)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            analysis_id, year, month,
+            s.get("campus", ""), s.get("coach", ""),
+            s.get("lessons", 0), s.get("actual_attendance", 0), s.get("expected_attendance", 0),
+            s.get("revenue", 0.0), s.get("site_cost", 0.0), s.get("teaching_fee", 0.0),
+        ))
+    conn.commit()
+    conn.close()
+
+
+def delete_offcampus_coach_stats(analysis_id: int) -> None:
+    conn = _get_conn()
+    conn.execute("DELETE FROM offcampus_coach_stats WHERE analysis_id = ?", (analysis_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_offcampus_available_months() -> List[Dict[str, int]]:
+    conn = _get_conn()
+    rows = conn.execute("""
+        SELECT DISTINCT year, month FROM offcampus_coach_stats
+        ORDER BY year, month
+    """).fetchall()
+    conn.close()
+    return [{"year": r["year"], "month": r["month"]} for r in rows]
+
+
+def query_offcampus_cumulative(year_from: int, month_from: int, year_to: int, month_to: int) -> List[Dict[str, Any]]:
+    """按月范围聚合校外教练统计，返回每位教练的累计数据"""
+    conn = _get_conn()
+    rows = conn.execute("""
+        SELECT
+            campus, coach,
+            SUM(lessons)             AS lessons,
+            SUM(actual_attendance)   AS actual_attendance,
+            SUM(expected_attendance) AS expected_attendance,
+            SUM(revenue)             AS revenue,
+            SUM(site_cost)           AS site_cost,
+            SUM(teaching_fee)        AS teaching_fee
+        FROM offcampus_coach_stats
+        WHERE (year * 100 + month) BETWEEN ? AND ?
+        GROUP BY campus, coach
+    """, (year_from * 100 + month_from, year_to * 100 + month_to)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def save_cumulative_report(info: Dict[str, Any]) -> int:
+    conn = _get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO offcampus_cumulative_reports
+            (year_from, month_from, year_to, month_to, filename, campus_count, coach_count)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        info.get("year_from"), info.get("month_from"),
+        info.get("year_to"), info.get("month_to"),
+        info.get("filename", ""),
+        info.get("campus_count", 0), info.get("coach_count", 0),
+    ))
+    row_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return row_id
+
+
+def get_cumulative_reports(limit: int = 50) -> List[Dict[str, Any]]:
+    conn = _get_conn()
+    rows = conn.execute("""
+        SELECT * FROM offcampus_cumulative_reports ORDER BY created_at DESC LIMIT ?
+    """, (limit,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def delete_cumulative_report(report_id: int) -> Optional[Dict[str, Any]]:
+    conn = _get_conn()
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM offcampus_cumulative_reports WHERE id = ?", (report_id,)).fetchone()
+    if not row:
+        conn.close()
+        return None
+    info = dict(row)
+    conn.execute("DELETE FROM offcampus_cumulative_reports WHERE id = ?", (report_id,))
+    conn.commit()
+    conn.close()
+    return info
+
+
+# ──────────────────── Monthly Upload Meta ────────────────────
+
+def upsert_monthly_upload_meta(
+    year: int, month: int, key: str,
+    original_name: str, stored_path: str, file_size: int
+) -> None:
+    conn = _get_conn()
+    conn.execute("""
+        INSERT INTO monthly_upload_meta (year, month, file_key, original_name, stored_path, file_size)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(year, month, file_key) DO UPDATE SET
+            original_name = excluded.original_name,
+            stored_path   = excluded.stored_path,
+            file_size     = excluded.file_size,
+            uploaded_at   = CURRENT_TIMESTAMP
+    """, (year, month, key, original_name, stored_path, file_size))
+    conn.commit()
+    conn.close()
+
+
+def get_monthly_upload_meta(year: int, month: int) -> List[Dict[str, Any]]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM monthly_upload_meta WHERE year = ? AND month = ? ORDER BY file_key",
+        (year, month)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def delete_monthly_upload_meta(year: int, month: int, key: str) -> bool:
+    conn = _get_conn()
+    cur = conn.execute(
+        "DELETE FROM monthly_upload_meta WHERE year = ? AND month = ? AND file_key = ?",
+        (year, month, key)
+    )
+    conn.commit()
+    affected = cur.rowcount
+    conn.close()
+    return affected > 0
+
+
+def list_monthly_upload_periods() -> List[Dict[str, Any]]:
+    conn = _get_conn()
+    rows = conn.execute("""
+        SELECT year, month, COUNT(*) AS file_count
+        FROM monthly_upload_meta
+        GROUP BY year, month
+        ORDER BY year DESC, month DESC
+    """).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 

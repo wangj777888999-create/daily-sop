@@ -2,7 +2,7 @@
 export type ToolKind = 'iframe' | 'vue'
 
 /** 工具所属业务板块 */
-export type ToolCategory = '校内' | '校外' | '通用'
+export type ToolCategory = '月度数据' | '校内' | '校外' | '通用'
 
 /** 单个工具的注册信息 */
 export interface Tool {

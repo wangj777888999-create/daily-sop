@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import Button from '@/ui/components/common/Button.vue'
 import Card from '@/ui/components/common/Card.vue'
 
 type Step = 'select' | 'preview' | 'result'
 
 const step = ref<Step>('select')
-const skjlFile = ref<File | null>(null)
-const xwksfFile = ref<File | null>(null)
-const cwFile = ref<File | null>(null)
-const cdfFile = ref<File | null>(null)
+const year = ref(new Date().getMonth() === 0 ? new Date().getFullYear() - 1 : new Date().getFullYear())
+const month = ref(new Date().getMonth() === 0 ? 12 : new Date().getMonth())
+const skjlFile = ref<File | { stored: true; name: string } | null>(null)
+const xwksfFile = ref<File | { stored: true; name: string } | null>(null)
+const cwFile = ref<File | { stored: true; name: string } | null>(null)
+const cdfFile = ref<File | { stored: true; name: string } | null>(null)
 const lastMonthFile = ref<File | null>(null)
 const loading = ref(false)
 const errorMsg = ref('')
+const storedStatus = ref<Record<string, boolean>>({})
+
+const monthOptions = Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `${i + 1}月` }))
 
 const preview = ref<any>(null)
 const processResult = ref<any>(null)
@@ -21,6 +26,31 @@ const history = ref<any[]>([])
 const API = '/api/tools/offcampus-monthly'
 
 const canPreview = computed(() => skjlFile.value && xwksfFile.value && cwFile.value && cdfFile.value)
+const storedCount = computed(() => ['skjl', 'finance', 'teaching_fee', 'venue_fee'].filter(k => storedStatus.value[k]).length)
+const hasEnoughStored = computed(() => storedCount.value >= 4)
+
+async function loadStoredStatus() {
+  try {
+    const res = await fetch(`/api/tools/monthly-data/status/${year.value}/${month.value}`)
+    if (!res.ok) return
+    const data = await res.json()
+    const map: Record<string, boolean> = {}
+    for (const [k, v] of Object.entries(data.files as Record<string, { uploaded: boolean }>)) {
+      map[k] = v.uploaded
+    }
+    storedStatus.value = map
+  } catch {}
+}
+
+function useStoredData() {
+  const sentinel = (name: string) => ({ stored: true as const, name })
+  skjlFile.value = sentinel('[已存储] 上课记录')
+  xwksfFile.value = sentinel('[已存储] 课时费')
+  cwFile.value = sentinel('[已存储] 财务明细')
+  cdfFile.value = sentinel('[已存储] 场地费')
+}
+
+const isFile = (f: unknown): f is File => f instanceof File
 
 function onFileSelect(event: Event, type: 'skjl' | 'xwksf' | 'cw' | 'cdf' | 'lastMonth') {
   const input = event.target as HTMLInputElement
@@ -38,8 +68,10 @@ async function doPreview() {
   errorMsg.value = ''
   try {
     const fd = new FormData()
-    fd.append('skjl_file', skjlFile.value!)
-    fd.append('cw_file', cwFile.value!)
+    fd.append('year', String(year.value))
+    fd.append('month', String(month.value))
+    if (skjlFile.value instanceof File) fd.append('skjl_file', skjlFile.value)
+    if (cwFile.value instanceof File) fd.append('cw_file', cwFile.value)
     const res = await fetch(`${API}/preview`, { method: 'POST', body: fd })
     if (!res.ok) {
       const err = await res.json()
@@ -59,10 +91,12 @@ async function doProcess() {
   errorMsg.value = ''
   try {
     const fd = new FormData()
-    fd.append('skjl_file', skjlFile.value!)
-    fd.append('xwksf_file', xwksfFile.value!)
-    fd.append('cw_file', cwFile.value!)
-    fd.append('cdf_file', cdfFile.value!)
+    fd.append('year', String(year.value))
+    fd.append('month', String(month.value))
+    if (skjlFile.value instanceof File) fd.append('skjl_file', skjlFile.value)
+    if (xwksfFile.value instanceof File) fd.append('xwksf_file', xwksfFile.value)
+    if (cwFile.value instanceof File) fd.append('cw_file', cwFile.value)
+    if (cdfFile.value instanceof File) fd.append('cdf_file', cdfFile.value)
     if (lastMonthFile.value) fd.append('last_month_file', lastMonthFile.value)
     const res = await fetch(`${API}/process`, { method: 'POST', body: fd })
     if (!res.ok) {
@@ -100,7 +134,13 @@ function reset() {
   preview.value = null
   processResult.value = null
   errorMsg.value = ''
+  skjlFile.value = null
+  xwksfFile.value = null
+  cwFile.value = null
+  cdfFile.value = null
 }
+
+onMounted(loadStoredStatus)
 
 function formatMoney(n: number) {
   return n ? n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'
@@ -135,6 +175,26 @@ loadHistory()
 
         <!-- Step 1: Upload files -->
         <div v-if="step === 'select'" class="flex flex-col gap-4">
+          <!-- Month selector -->
+          <div class="flex items-center gap-3">
+            <label class="text-sm text-text-body font-medium">分析月份：</label>
+            <select v-model.number="year" @change="loadStoredStatus" class="border border-border rounded-lg px-3 py-1.5 text-sm">
+              <option :value="2026">2026年</option>
+              <option :value="2025">2025年</option>
+            </select>
+            <select v-model.number="month" @change="loadStoredStatus" class="border border-border rounded-lg px-3 py-1.5 text-sm">
+              <option v-for="m in monthOptions" :key="m.value" :value="m.value">{{ m.label }}</option>
+            </select>
+          </div>
+
+          <!-- Stored data banner -->
+          <div v-if="hasEnoughStored" class="bg-green-50 border border-green-200 rounded-lg px-4 py-3 flex items-center justify-between">
+            <p class="text-sm text-green-700">
+              ✓ 已找到 {{ year }}年{{ month }}月 的存储数据（{{ storedCount }}/4 个必需文件）
+            </p>
+            <Button variant="secondary" size="small" @click="useStoredData">使用存储数据</Button>
+          </div>
+
           <p class="text-sm text-text-light">请上传 4 个必需文件 + 1 个可选文件（上月分析，用于环比计算）</p>
 
           <!-- Row 1: 3 required files -->
@@ -149,7 +209,7 @@ loadHistory()
               </div>
               <div v-else>
                 <p class="text-sm font-medium text-green-600">✓ {{ skjlFile.name }}</p>
-                <p class="text-xs text-text-light mt-1">{{ (skjlFile.size / 1024).toFixed(1) }} KB</p>
+                <p class="text-xs text-text-light mt-1">{{ isFile(skjlFile) ? (skjlFile.size / 1024).toFixed(1) + ' KB' : '已存储' }}</p>
               </div>
             </label>
 
@@ -163,7 +223,7 @@ loadHistory()
               </div>
               <div v-else>
                 <p class="text-sm font-medium text-green-600">✓ {{ xwksfFile.name }}</p>
-                <p class="text-xs text-text-light mt-1">{{ (xwksfFile.size / 1024).toFixed(1) }} KB</p>
+                <p class="text-xs text-text-light mt-1">{{ isFile(xwksfFile) ? (xwksfFile.size / 1024).toFixed(1) + ' KB' : '已存储' }}</p>
               </div>
             </label>
 
@@ -177,7 +237,7 @@ loadHistory()
               </div>
               <div v-else>
                 <p class="text-sm font-medium text-green-600">✓ {{ cwFile.name }}</p>
-                <p class="text-xs text-text-light mt-1">{{ (cwFile.size / 1024).toFixed(1) }} KB</p>
+                <p class="text-xs text-text-light mt-1">{{ isFile(cwFile) ? (cwFile.size / 1024).toFixed(1) + ' KB' : '已存储' }}</p>
               </div>
             </label>
           </div>
@@ -194,7 +254,7 @@ loadHistory()
               </div>
               <div v-else>
                 <p class="text-sm font-medium text-green-600">✓ {{ cdfFile.name }}</p>
-                <p class="text-xs text-text-light mt-1">{{ (cdfFile.size / 1024).toFixed(1) }} KB</p>
+                <p class="text-xs text-text-light mt-1">{{ isFile(cdfFile) ? (cdfFile.size / 1024).toFixed(1) + ' KB' : '已存储' }}</p>
               </div>
             </label>
 

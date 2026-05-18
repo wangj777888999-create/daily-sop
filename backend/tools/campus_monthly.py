@@ -15,7 +15,7 @@ import json
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
 UPLOAD_DIR = os.path.join(DATA_DIR, "monthly_output")
 
-def _read_excel(data: bytes, sheet_name: str) -> pd.DataFrame:
+def _read_excel(data: bytes, sheet_name=0) -> pd.DataFrame:
     """自动选择 Excel 引擎：先尝试 openpyxl（.xlsx），失败后退回 xlrd（.xls）"""
     try:
         return pd.read_excel(io.BytesIO(data), sheet_name=sheet_name, engine='openpyxl')
@@ -266,6 +266,37 @@ def _generate_excel(data_dict: Dict[str, pd.DataFrame]) -> bytes:
     return buf.read()
 
 
+# ──────────────────── 文件模式辅助 ────────────────────
+
+def _load_outside_keywords() -> List[str]:
+    config_path = os.path.join(DATA_DIR, "config.json")
+    with open(config_path, encoding="utf-8") as f:
+        config = json.load(f)
+    return config["tools"]["outside_keywords"]
+
+
+def _build_campus_att_from_skjl(xnskjl: pd.DataFrame, cw: pd.DataFrame) -> pd.DataFrame:
+    """从校内上课记录 + 财务明细构建 att_df（文件模式）"""
+    cw_campus = cw[cw["学员类型"] == "学校学员"].copy()
+    course_coach = (
+        cw_campus.dropna(subset=["教练"])
+        .groupby("课程名称")["教练"]
+        .first()
+        .reset_index()
+        .rename(columns={"教练": "教练姓名"})
+    )
+    result = xnskjl.copy()
+    result = pd.merge(result, course_coach, on="课程名称", how="left")
+    result["教练姓名"] = result["教练姓名"].fillna("未知教练")
+    result["签到状态"] = result["状态"] if "状态" in result.columns else "已到"
+    result["部门"] = "校内"
+    result["学校名称"] = "未知学校"
+    result["实际上课人次"] = (result["签到状态"] == "已到").astype(int)
+    result["课程应到人次"] = 1
+    result["确认收入"] = 0.0
+    return result
+
+
 # ──────────────────── 核心入口 ────────────────────
 
 def preview_monthly(year: int, month: int, checkin_records: List[Dict]) -> Dict[str, Any]:
@@ -375,5 +406,107 @@ def process_monthly(
         "record_count": len(checkin_records),
         "department_count": len(att_df['部门'].unique()),
         "coach_count": len(att_df['教练姓名'].unique()),
+        "unmapped_courses": unmapped_courses,
+    }
+
+
+def preview_monthly_from_file(skjl_bytes: bytes) -> Dict[str, Any]:
+    """预览文件模式：从上课记录过滤校内课程并返回概览"""
+    outside_keywords = _load_outside_keywords()
+    kw_pattern = "|".join(outside_keywords)
+    skjl = _read_excel(skjl_bytes)
+    if "课程名称" not in skjl.columns:
+        raise ValueError("上课记录文件中未找到「课程名称」列，请检查文件格式")
+    xnskjl = skjl[~skjl["课程名称"].str.contains(kw_pattern, case=False, na=False)].copy()
+    coaches = sorted(xnskjl["教练"].dropna().unique().tolist()) if "教练" in xnskjl.columns else []
+    return {
+        "checkin_count": len(xnskjl),
+        "courses": sorted(xnskjl["课程名称"].dropna().unique().tolist()),
+        "coaches": coaches,
+        "departments": [],
+        "schools": [],
+        "date_range": ["", ""],
+    }
+
+
+def process_monthly_from_file(
+    year: int,
+    month: int,
+    skjl_bytes: bytes,
+    finance_bytes: Optional[bytes] = None,
+    course_type_bytes: Optional[bytes] = None,
+    refund_bytes: Optional[bytes] = None,
+) -> Dict[str, Any]:
+    """文件模式月度分析：上传整体上课记录，自动过滤校内部分"""
+    outside_keywords = _load_outside_keywords()
+    kw_pattern = "|".join(outside_keywords)
+    skjl = _read_excel(skjl_bytes)
+    if "课程名称" not in skjl.columns:
+        raise ValueError("上课记录文件中未找到「课程名称」列，请检查文件格式")
+    xnskjl = skjl[~skjl["课程名称"].str.contains(kw_pattern, case=False, na=False)].copy()
+    if xnskjl.empty:
+        raise ValueError("过滤后无校内课程记录，请确认文件内容或校区关键词配置（当前：" + "、".join(outside_keywords) + "）")
+
+    data_to_export: Dict[str, Any] = {}
+    att_df = None
+
+    if finance_bytes:
+        cw = _read_excel(finance_bytes, sheet_name="财务")
+        att_df = _build_campus_att_from_skjl(xnskjl, cw)
+        data_to_export["校内分析"] = campus_finance_analysis(att_df.copy(), cw)
+    else:
+        att_df = xnskjl.copy()
+        att_df["教练姓名"] = att_df["教练"] if "教练" in att_df.columns else "未知教练"
+        att_df["部门"] = "校内"
+        att_df["学校名称"] = "未知学校"
+
+    if course_type_bytes:
+        type_file = _read_excel(course_type_bytes, sheet_name="Sheet1")
+    else:
+        from tools.course_types import load_all
+        ct_records = load_all()
+        type_file = pd.DataFrame(ct_records) if ct_records else None
+    if type_file is not None and not type_file.empty and att_df is not None:
+        try:
+            type_result = course_type_analysis(att_df.copy(), type_file, year, month)
+            if type_result is not None:
+                data_to_export["类型分析"] = type_result
+        except ValueError:
+            pass
+
+    if refund_bytes:
+        refund_df = _read_excel(refund_bytes, sheet_name="导出")
+        dept_file = _get_dept_file()
+        if os.path.exists(dept_file):
+            department = pd.read_excel(dept_file, sheet_name="Sheet1")
+            data_to_export["退款分析"] = refund_analysis(refund_df, department)
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    filename = f"{year}年{month}月校内分析（文件模式）.xlsx"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    excel_bytes = _generate_excel(data_to_export)
+    with open(filepath, "wb") as f:
+        f.write(excel_bytes)
+
+    unmapped_courses: List[str] = []
+    if "课程名称" in xnskjl.columns:
+        all_courses = set(xnskjl["课程名称"].dropna().unique())
+        try:
+            from tools.course_types import load_all
+            mapped = {r["课程名称"] for r in load_all()}
+            unmapped_courses = sorted(all_courses - mapped)
+        except Exception:
+            pass
+
+    coach_col = "教练姓名" if att_df is not None and "教练姓名" in att_df.columns else "教练"
+    coach_count = len(att_df[coach_col].dropna().unique()) if att_df is not None and coach_col in att_df.columns else 0
+
+    return {
+        "filename": filename,
+        "filepath": filepath,
+        "sheets": list(data_to_export.keys()),
+        "record_count": len(xnskjl),
+        "department_count": 1,
+        "coach_count": coach_count,
         "unmapped_courses": unmapped_courses,
     }

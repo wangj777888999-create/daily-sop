@@ -1,6 +1,19 @@
 import type { Tool } from '@/types/toolbox'
 
 export const tools: Tool[] = [
+  // ── 月度数据 ───────────────────────────────────────
+  {
+    id: 'monthly-data',
+    name: '月度数据管理',
+    description: '统一上传每月源数据，校内/校外分析自动读取，无需重复上传',
+    icon: '◈',
+    color: '#7C3AED',
+    tags: ['数据', '月度', '管理'],
+    type: 'vue',
+    route: '/tools/monthly-data',
+    category: '月度数据',
+  },
+
   // ── 校内 ──────────────────────────────────────────
   {
     id: 'daily-checkin',
@@ -92,6 +105,16 @@ export const tools: Tool[] = [
     category: '校外',
   },
   // ── 通用 ──────────────────────────────────────────
+  {
+    id: 'discount-rate',
+    name: '课时费折扣率计算',
+    description: '按课程/教练汇总到课数据，可配置筛选规则，自动计算折扣率',
+    icon: '◈',
+    color: '#0D9488',
+    tags: ['财务', '折扣率', 'Excel'],
+    type: 'vue',
+    category: '通用',
+  },
   {
     id: 'fee-calculator',
     name: '课时费计算器',

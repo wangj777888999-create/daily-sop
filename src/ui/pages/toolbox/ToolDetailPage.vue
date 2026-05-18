@@ -15,11 +15,13 @@ const openInNewWindow = (src: string | undefined) => { if (src) window.open(src,
 const vueComponent = computed(() => {
   if (!tool.value || tool.value.type !== 'vue') return null
   const componentMap: Record<string, any> = {
+    'monthly-data': () => import('@/ui/pages/tools/MonthlyDataPage.vue'),
     'daily-checkin': () => import('@/ui/pages/tools/DailyCheckin.vue'),
     'checkin-consolidation': () => import('@/ui/pages/tools/CheckinConsolidation.vue'),
     'campus-monthly': () => import('@/ui/pages/tools/CampusMonthly.vue'),
     'offcampus-monthly': () => import('@/ui/pages/tools/OffcampusMonthly.vue'),
     'offcampus-cumulative': () => import('@/ui/pages/tools/OffcampusCumulative.vue'),
+    'discount-rate': () => import('@/ui/pages/tools/DiscountRate.vue'),
     'course-types': () => import('@/ui/pages/tools/CourseTypes.vue'),
     'photo-checkin': () => import('@/ui/pages/tools/PhotoCheckin.vue'),
     'yolo-validation': () => import('@/ui/pages/tools/YoloValidation.vue'),

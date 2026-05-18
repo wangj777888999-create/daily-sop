@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import Button from '@/ui/components/common/Button.vue'
 import Card from '@/ui/components/common/Card.vue'
 
 type Step = 'select' | 'preview' | 'result'
+type Mode = 'sqlite' | 'file'
 
 const step = ref<Step>('select')
+const mode = ref<Mode>('sqlite')
 const year = ref(new Date().getFullYear())
 const month = ref(new Date().getMonth() || 12) // 0→12（1月时取上年12月），其余月份正确对应上月
+const skjlFile = ref<File | { stored: true; name: string } | null>(null)
 const financeFile = ref<File | null>(null)
 const courseTypeFile = ref<File | null>(null)
 const refundFile = ref<File | null>(null)
@@ -25,11 +28,37 @@ const monthOptions = Array.from({ length: 12 }, (_, i) => ({
   label: `${i + 1}月`,
 }))
 
-function onFileSelect(event: Event, type: 'finance' | 'courseType' | 'refund') {
+const storedStatus = ref<Record<string, boolean>>({})
+const hasStoredSkjl = computed(() => mode.value === 'file' && storedStatus.value['skjl'])
+
+async function loadStoredStatus() {
+  try {
+    const res = await fetch(`/api/tools/monthly-data/status/${year.value}/${month.value}`)
+    if (!res.ok) return
+    const data = await res.json()
+    const map: Record<string, boolean> = {}
+    for (const [k, v] of Object.entries(data.files as Record<string, { uploaded: boolean }>)) {
+      map[k] = v.uploaded
+    }
+    storedStatus.value = map
+  } catch {}
+}
+
+function useStoredSkjl() {
+  skjlFile.value = { stored: true as const, name: '[已存储] 上课记录' }
+}
+
+const isFile = (f: unknown): f is File => f instanceof File
+
+onMounted(loadStoredStatus)
+watch([year, month], loadStoredStatus)
+
+function onFileSelect(event: Event, type: 'skjl' | 'finance' | 'courseType' | 'refund') {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
-  if (type === 'finance') financeFile.value = file
+  if (type === 'skjl') skjlFile.value = file
+  else if (type === 'finance') financeFile.value = file
   else if (type === 'courseType') courseTypeFile.value = file
   else refundFile.value = file
 }
@@ -41,6 +70,8 @@ async function doPreview() {
     const fd = new FormData()
     fd.append('year', String(year.value))
     fd.append('month', String(month.value))
+    fd.append('mode', mode.value)
+    if (mode.value === 'file' && skjlFile.value instanceof File) fd.append('skjl_file', skjlFile.value)
     const res = await fetch(`${API}/preview`, { method: 'POST', body: fd })
     if (!res.ok) {
       const err = await res.json()
@@ -62,9 +93,11 @@ async function doProcess() {
     const fd = new FormData()
     fd.append('year', String(year.value))
     fd.append('month', String(month.value))
-    if (financeFile.value) fd.append('finance_file', financeFile.value)
-    if (courseTypeFile.value) fd.append('course_type_file', courseTypeFile.value)
-    if (refundFile.value) fd.append('refund_file', refundFile.value)
+    fd.append('mode', mode.value)
+    if (mode.value === 'file' && skjlFile.value instanceof File) fd.append('skjl_file', skjlFile.value)
+    if (financeFile.value instanceof File) fd.append('finance_file', financeFile.value)
+    if (courseTypeFile.value instanceof File) fd.append('course_type_file', courseTypeFile.value)
+    if (refundFile.value instanceof File) fd.append('refund_file', refundFile.value)
     const res = await fetch(`${API}/process`, { method: 'POST', body: fd })
     if (!res.ok) {
       const err = await res.json()
@@ -101,6 +134,7 @@ function reset() {
   preview.value = null
   processResult.value = null
   errorMsg.value = ''
+  skjlFile.value = null
 }
 
 function formatDate(d: string) {
@@ -142,6 +176,54 @@ loadHistory()
             <select v-model.number="month" class="border border-border rounded-lg px-3 py-1.5 text-sm">
               <option v-for="m in monthOptions" :key="m.value" :value="m.value">{{ m.label }}</option>
             </select>
+          </div>
+
+          <!-- Data source toggle -->
+          <div class="flex items-center gap-1 bg-page-bg rounded-lg p-1 w-fit">
+            <button
+              :class="['px-4 py-1.5 rounded-md text-sm font-medium transition-colors', mode === 'sqlite' ? 'bg-white shadow text-text-heading' : 'text-text-light hover:text-text-body']"
+              @click="mode = 'sqlite'"
+            >
+              签到历史
+            </button>
+            <button
+              :class="['px-4 py-1.5 rounded-md text-sm font-medium transition-colors', mode === 'file' ? 'bg-white shadow text-text-heading' : 'text-text-light hover:text-text-body']"
+              @click="mode = 'file'"
+            >
+              上传文件
+            </button>
+          </div>
+          <p v-if="mode === 'sqlite'" class="text-xs text-text-light -mt-2">从每日签到工具积累的历史数据中提取</p>
+          <p v-else class="text-xs text-text-light -mt-2">上传整体上课记录，自动过滤校内课程（排除西溪、农都、滨江）</p>
+
+          <!-- Stored data banner (file mode) -->
+          <div
+            v-if="mode === 'file' && hasStoredSkjl && !isFile(skjlFile)"
+            class="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-sm"
+          >
+            <span class="text-green-700">✓ 已找到 {{ year }}年{{ month }}月 的存储数据（上课记录）</span>
+            <button
+              class="text-xs text-accent hover:text-accent-dark font-medium ml-4 whitespace-nowrap"
+              @click.prevent="useStoredSkjl"
+            >使用存储数据 →</button>
+          </div>
+
+          <!-- 上课记录上传（文件模式） -->
+          <div v-if="mode === 'file'">
+            <label class="border-2 border-dashed border-accent rounded-xl p-5 text-center cursor-pointer hover:bg-accent/5 transition-colors flex flex-col items-center gap-1">
+              <input type="file" accept=".xlsx,.xls" class="hidden" @change="onFileSelect($event, 'skjl')" />
+              <div v-if="!skjlFile">
+                <p class="text-xl mb-1">◈</p>
+                <p class="text-sm font-medium text-text-heading">上课记录</p>
+                <p class="text-xs text-accent mt-1">必传 · 校内外共用文件</p>
+                <p class="text-xs text-text-light">系统自动过滤校内课程</p>
+              </div>
+              <div v-else>
+                <p class="text-sm font-medium text-green-600">✓ {{ skjlFile.name }}</p>
+                <p v-if="isFile(skjlFile)" class="text-xs text-text-light mt-1">{{ (skjlFile.size / 1024).toFixed(1) }} KB</p>
+                <p v-else class="text-xs text-text-light mt-1">已存储</p>
+              </div>
+            </label>
           </div>
 
           <!-- File uploads -->
@@ -190,7 +272,7 @@ loadHistory()
             </label>
           </div>
 
-          <Button variant="primary" :loading="loading" @click="doPreview">
+          <Button variant="primary" :loading="loading" :disabled="mode === 'file' && !skjlFile" @click="doPreview">
             预览数据
           </Button>
         </div>
@@ -200,7 +282,7 @@ loadHistory()
           <div class="grid grid-cols-4 gap-4 text-center">
             <div class="bg-page-bg rounded-lg p-3">
               <p class="text-2xl font-bold text-text-heading">{{ preview.checkin_count }}</p>
-              <p class="text-xs text-text-light">签到记录数</p>
+              <p class="text-xs text-text-light">{{ preview.data_source === 'file' ? '上课记录数' : '签到记录数' }}</p>
             </div>
             <div class="bg-page-bg rounded-lg p-3">
               <p class="text-2xl font-bold text-text-heading">{{ preview.departments?.length || 0 }}</p>
@@ -217,7 +299,8 @@ loadHistory()
           </div>
 
           <div v-if="preview.checkin_count === 0" class="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3 text-sm text-yellow-700">
-            该月暂无签到数据，请先使用「每日教练签到分析」工具积累数据。
+            <template v-if="preview.data_source === 'file'">未从上课记录中筛选出校内课程，请检查文件内容。</template>
+            <template v-else>该月暂无签到数据，请先使用「每日教练签到分析」工具积累数据。</template>
           </div>
 
           <div v-else class="text-sm text-text-light">
