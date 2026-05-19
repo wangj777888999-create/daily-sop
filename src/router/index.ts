@@ -53,6 +53,12 @@ const routes: RouteRecordRaw[] = [
     name: 'files',
     component: () => import('@/ui/pages/files/FilesPage.vue'),
     meta: { title: '数据文件' }
+  },
+  {
+    path: '/settings',
+    name: 'settings',
+    component: () => import('@/ui/pages/settings/SettingsPage.vue'),
+    meta: { title: '系统设置' }
   }
 ]
 

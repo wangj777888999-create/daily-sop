@@ -135,63 +135,45 @@ def _read_excel(data: bytes, sheet_name: str = "Sheet1", expected_cols: set = No
 
 # ──────────────────── 子函数 ────────────────────
 
-def skjl_separate(skjl: pd.DataFrame, cw: pd.DataFrame, outside_keywords: List[str]) -> tuple:
-    """按课程名关键词拆分校外/校内上课记录，校外记录附加校区和教练"""
-    kw_pattern = "|".join(outside_keywords)
-    xwskjl = skjl[skjl[COL_COURSE_NAME].str.contains(kw_pattern, case=False, na=False)].copy()
-    xwskjl[COL_TIME_COURSE] = xwskjl[COL_COURSE_INFO].astype(str) + xwskjl[COL_COURSE_NAME].astype(str)
-
-    xwcw, course_coach = process_finance_data(cw)
-
-    cw_copy = cw.copy()
-    cw_copy[COL_TIME_COURSE] = (
-        cw_copy["上课日期"].astype(str) + " "
-        + cw_copy["上课时间"].astype(str)
-        + cw_copy[COL_COURSE_NAME].astype(str)
-    )
-    cw_copy = cw_copy.drop_duplicates(subset=[COL_TIME_COURSE])[[COL_TIME_COURSE, COL_CAMPUS]].copy()
-
-    xwskjl = pd.merge(xwskjl, cw_copy[[COL_TIME_COURSE, COL_CAMPUS]], on=COL_TIME_COURSE, how="left")
-    xwskjl = pd.merge(xwskjl, course_coach[[COL_TIME_COURSE, COL_COACH]], on=COL_TIME_COURSE, how="left")
-    xwskjl.rename(columns={COL_ORDER_TYPE: COL_CAMPUS}, inplace=True)
-    xwskjl_copy = xwskjl.drop(columns=[COL_TIME_COURSE]).copy()
-
-    xnskjl = skjl[~skjl[COL_COURSE_NAME].str.contains(kw_pattern, case=False, na=False)].copy()
-    return xwskjl_copy, xnskjl
-
 
 def process_finance_data(cw: pd.DataFrame) -> tuple:
-    """处理财务数据：校外财务表（球馆学员）+ 课程-教练映射"""
+    """处理财务数据：校外财务表（球馆学员）+ 课程-教练-校区映射"""
     xwcw = cw[cw[COL_STUDENT_TYPE] == COL_VENUE_STUDENT].copy()
     xwcw.rename(columns={COL_ORDER_TYPE: COL_CAMPUS}, inplace=True)
 
-    cw_copy = cw.copy()
-    cw_copy[COL_TIME_COURSE] = (
-        cw_copy["上课日期"].astype(str) + " "
-        + cw_copy["上课时间"].astype(str)
-        + cw_copy[COL_COURSE_NAME].astype(str)
+    # 从 xwcw（已 rename 校区）构建 session 映射，含校区列
+    xwcw[COL_TIME_COURSE] = (
+        xwcw["上课日期"].astype(str) + " "
+        + xwcw["上课时间"].astype(str)
+        + xwcw[COL_COURSE_NAME].astype(str)
     )
-    course_coach = cw_copy.drop_duplicates(subset=[COL_TIME_COURSE])[[COL_TIME_COURSE, COL_COACH]].copy()
+    course_coach = xwcw.drop_duplicates(subset=[COL_TIME_COURSE])[
+        [COL_TIME_COURSE, COL_COACH, COL_CAMPUS]
+    ].copy()
     return xwcw, course_coach
 
 
-def calculate_basic_stats(xwskjl: pd.DataFrame) -> tuple:
-    """计算上课节次、人次、平均课堂人次"""
-    xwskjl_copy = xwskjl.copy()
-    xwskjl_copy[COL_TIME_COURSE] = xwskjl_copy[COL_COURSE_INFO].astype(str) + xwskjl_copy[COL_COURSE_NAME].astype(str)
-    xwskjl_copy[COL_CAMPUS_COACH] = xwskjl_copy[COL_CAMPUS].astype(str) + "-" + xwskjl_copy[COL_COACH].astype(str)
+def calculate_basic_stats(xwcw: pd.DataFrame) -> pd.DataFrame:
+    """计算上课节次、人次、平均课堂人次（以财务明细为基底，财务行即已到）"""
+    xwcw_copy = xwcw.copy()
+    # 时加课已由 process_finance_data 写入，此处确保存在
+    if COL_TIME_COURSE not in xwcw_copy.columns:
+        xwcw_copy[COL_TIME_COURSE] = (
+            xwcw_copy["上课日期"].astype(str) + " "
+            + xwcw_copy["上课时间"].astype(str)
+            + xwcw_copy[COL_COURSE_NAME].astype(str)
+        )
+    xwcw_copy[COL_CAMPUS_COACH] = xwcw_copy[COL_CAMPUS].astype(str) + "-" + xwcw_copy[COL_COACH].astype(str)
 
-    xwskjl_in = xwskjl_copy[xwskjl_copy[COL_STATUS] == COL_ATTENDED].copy()
-    xwskjl_in[COL_CAMPUS_COACH] = xwskjl_in[COL_CAMPUS].astype(str) + "-" + xwskjl_in[COL_COACH].astype(str)
-
+    # 财务记录即已到，无需 status 过滤
     campus_course = (
-        xwskjl_in.drop_duplicates(subset=[COL_TIME_COURSE])
+        xwcw_copy.drop_duplicates(subset=[COL_TIME_COURSE])
         .groupby(COL_CAMPUS_COACH, as_index=False)[COL_TIME_COURSE]
         .nunique()
         .rename(columns={COL_TIME_COURSE: "上课节次"})
     )
     campus_people = (
-        xwskjl_in.groupby(COL_CAMPUS_COACH, as_index=False)
+        xwcw_copy.groupby(COL_CAMPUS_COACH, as_index=False)
         .size()
         .rename(columns={"size": COL_STUDENT_COUNT})
     )
@@ -203,7 +185,7 @@ def calculate_basic_stats(xwskjl: pd.DataFrame) -> tuple:
     combined[COL_AVG_CLASS_SIZE] = combined.apply(
         lambda x: _safe_div_float(x[COL_STUDENT_COUNT], x["上课节次"]), axis=1
     )
-    return combined, xwskjl_copy
+    return combined
 
 
 def calculate_attendance_rate(combined: pd.DataFrame, xwskjl_copy: pd.DataFrame) -> pd.DataFrame:
@@ -341,9 +323,9 @@ def merge_teaching_fee(combined: pd.DataFrame, xwksf: pd.DataFrame) -> pd.DataFr
     return combined
 
 
-def site_cost(combined: pd.DataFrame, cdf_bytes: bytes, xwskjl: pd.DataFrame,
+def site_cost(combined: pd.DataFrame, cdf_bytes: bytes, xwskjl_copy: pd.DataFrame,
               last_month_ana: pd.DataFrame) -> pd.DataFrame:
-    """场地费及相关费用计算"""
+    """场地费及相关费用计算（xwskjl_copy 由调用方传入，已含校区教练和时加课）"""
     try:
         excel_file = pd.ExcelFile(io.BytesIO(cdf_bytes))
     except Exception as e:
@@ -370,7 +352,6 @@ def site_cost(combined: pd.DataFrame, cdf_bytes: bytes, xwskjl: pd.DataFrame,
     if not sheet_data:
         raise ValueError("场地费文件中没有可读取的 Sheet")
 
-    _, xwskjl_copy = calculate_basic_stats(xwskjl)
     date_sheet = pd.concat(sheet_data, ignore_index=True)
     date_sheet["上课日期"] = pd.to_datetime(date_sheet["上课日期"], errors="coerce").dt.strftime("%Y-%m-%d")
     date_sheet["上课时间"] = date_sheet["上课时间"].str.replace("--", "-", regex=False)
@@ -647,31 +628,71 @@ def _extract_coach_stats(combined: pd.DataFrame) -> List[dict]:
     return rows
 
 
+def _build_xwskjl_copy(
+    skjl: pd.DataFrame, course_coach: pd.DataFrame, outside_keywords: List[str]
+) -> pd.DataFrame:
+    """从原始上课记录过滤校外课程，join 财务 session_map 获取教练和校区"""
+    kw_pattern = "|".join(outside_keywords)
+    raw_att = skjl[skjl[COL_COURSE_NAME].str.contains(kw_pattern, case=False, na=False)].copy()
+
+    # 与财务侧保持一致的时加课拼接方式：日期 + 空格 + 时间 + 课程名
+    raw_att["上课日期"] = raw_att[COL_COURSE_INFO].str.extract(r"(\d{4}-\d{2}-\d{2})")
+    raw_att["上课时间"] = raw_att[COL_COURSE_INFO].str.extract(r"\d{4}-\d{2}-\d{2} (.+)")
+    raw_att[COL_TIME_COURSE] = (
+        raw_att["上课日期"].astype(str) + " "
+        + raw_att["上课时间"].astype(str)
+        + raw_att[COL_COURSE_NAME].astype(str)
+    )
+
+    # 通过财务 session_map join 获取教练和校区
+    xwskjl_copy = pd.merge(
+        raw_att,
+        course_coach[[COL_TIME_COURSE, COL_COACH, COL_CAMPUS]],
+        on=COL_TIME_COURSE,
+        how="left",
+    )
+    xwskjl_copy[COL_CAMPUS_COACH] = (
+        xwskjl_copy[COL_CAMPUS].astype(str) + "-" + xwskjl_copy[COL_COACH].astype(str)
+    )
+    return xwskjl_copy
+
+
 def _run_analysis(
-    xwskjl: pd.DataFrame,
-    xnskjl: pd.DataFrame,
+    skjl: pd.DataFrame,
     xwksf: pd.DataFrame,
     cw: pd.DataFrame,
     cdf_bytes: bytes,
     off_campus_coaches: List[str],
     last_month_ana: pd.DataFrame,
+    outside_keywords: List[str],
 ) -> tuple:
-    """串联所有子函数，返回 (combined筛选列, df完整数据)"""
+    """串联所有子函数，返回 (combined筛选列, df完整数据, coach_stats)"""
+    # 1. 财务处理（基底）
     xwcw, course_coach = process_finance_data(cw)
 
-    combined, xwskjl_copy = calculate_basic_stats(xwskjl)
-    combined = calculate_attendance_rate(combined, xwskjl_copy)
+    # 2. 课次/人次/确收 全部来自财务
+    combined = calculate_basic_stats(xwcw)
     combined = calculate_revenue(combined, xwcw)
+
+    # 3. 构建 xwskjl_copy（上课记录 join 财务）仅用于到课率和班级规模
+    xwskjl_copy = _build_xwskjl_copy(skjl, course_coach, outside_keywords)
+
+    # 4. 到课率、班级规模来自 xwskjl_copy
+    combined = calculate_attendance_rate(combined, xwskjl_copy)
     combined = analyze_class_size(combined, xwskjl_copy)
     combined = calculate_campus_contribution(combined)
 
+    # 5. 校外教练校内课次 — xnskjl 内部派生
+    kw_pattern = "|".join(outside_keywords)
+    xnskjl = skjl[~skjl[COL_COURSE_NAME].str.contains(kw_pattern, case=False, na=False)].copy()
     xn_skjl = calculate_offcampus_in_campus(xnskjl, course_coach, off_campus_coaches)
     combined = pd.merge(combined, xn_skjl, on=COL_COACH, how="left")
     combined[COL_INTERNAL_CLASSES] = combined[COL_INTERNAL_CLASSES].fillna(0).astype(int)
 
     combined = merge_teaching_fee(combined, xwksf)
 
-    combined = site_cost(combined, cdf_bytes, xwskjl, last_month_ana)
+    # 6. 场地费 — 传入 xwskjl_copy（含时加课和校区教练）
+    combined = site_cost(combined, cdf_bytes, xwskjl_copy, last_month_ana)
     combined = combined[~combined[COL_CAMPUS].str.contains(PINGPONG)].copy()
 
     coach_stats = _extract_coach_stats(combined)
@@ -681,7 +702,7 @@ def _run_analysis(
     ).reset_index(drop=True).fillna(" ")
     combined = pd.concat([combined, summary_rows], ignore_index=True)
 
-    total_summary = summarize_total(combined, xwskjl, last_month_ana).to_frame().T
+    total_summary = summarize_total(combined, xwskjl_copy, last_month_ana).to_frame().T
     combined = pd.concat([combined, total_summary], ignore_index=True)
 
     df = combined.copy()
@@ -695,21 +716,24 @@ def _run_analysis(
 # ──────────────────── 公开 API ────────────────────
 
 def preview_offcampus(skjl_bytes: bytes, cw_bytes: bytes) -> dict:
-    """预览：拆分校内外记录，返回统计"""
+    """预览：从财务明细提取校外课程基本信息"""
     config = _load_config()
     outside_keywords = config["tools"]["outside_keywords"]
 
     skjl = _read_excel(skjl_bytes, expected_cols=_SKJL_EXPECTED_COLS)
     cw = _read_excel(cw_bytes, sheet_name="财务", expected_cols=_CW_EXPECTED_COLS)
 
-    xwskjl, xnskjl = skjl_separate(skjl, cw, outside_keywords)
+    xwcw, course_coach = process_finance_data(cw)
+    kw_pattern = "|".join(outside_keywords)
+    offcampus_count = skjl[skjl[COL_COURSE_NAME].str.contains(kw_pattern, case=False, na=False)].shape[0]
+    oncampus_count = skjl[~skjl[COL_COURSE_NAME].str.contains(kw_pattern, case=False, na=False)].shape[0]
 
     return {
-        "offcampus_count": len(xwskjl),
-        "oncampus_count": len(xnskjl),
+        "offcampus_count": offcampus_count,
+        "oncampus_count": oncampus_count,
         "total_count": len(skjl),
-        "campuses": sorted(xwskjl[COL_CAMPUS].dropna().unique().tolist()) if COL_CAMPUS in xwskjl.columns else [],
-        "coaches": sorted(xwskjl[COL_COACH].dropna().unique().tolist()) if COL_COACH in xwskjl.columns else [],
+        "campuses": sorted(xwcw[COL_CAMPUS].dropna().unique().tolist()),
+        "coaches": sorted(xwcw[COL_COACH].dropna().unique().tolist()),
     }
 
 
@@ -729,8 +753,6 @@ def process_offcampus(
     xwksf = _read_excel(xwksf_bytes)
     cw = _read_excel(cw_bytes, sheet_name="财务", expected_cols=_CW_EXPECTED_COLS)
 
-    xwskjl, xnskjl = skjl_separate(skjl, cw, outside_keywords)
-
     if last_month_bytes:
         last_month_ana = _read_excel(last_month_bytes, sheet_name="综合统计")
     else:
@@ -738,22 +760,26 @@ def process_offcampus(
             COL_CAMPUS, COL_COACH, COL_VENUE_FEE, COL_STUDENT_COUNT, COL_S3_VENUE_COST
         ])
 
-    combined, df, coach_stats = _run_analysis(xwskjl, xnskjl, xwksf, cw, cdf_bytes, off_campus_coaches, last_month_ana)
+    combined, df, coach_stats = _run_analysis(
+        skjl, xwksf, cw, cdf_bytes, off_campus_coaches, last_month_ana, outside_keywords
+    )
 
     excel_bytes = _generate_excel(combined, df)
-
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
     non_summary = combined[
         ~combined[COL_CAMPUS].astype(str).str.endswith(SUMMARY_SUFFIX) & (combined[COL_CAMPUS] != Z_TOTAL)
     ]
 
+    kw_pattern = "|".join(outside_keywords)
+    offcampus_count = skjl[skjl[COL_COURSE_NAME].str.contains(kw_pattern, case=False, na=False)].shape[0]
+
     return {
         "excel_bytes": excel_bytes,
         "sheets": ["综合统计", "综合统计_完整数据"],
         "summary": {
-            "total_records": len(xwskjl) + len(xnskjl),
-            "offcampus_count": len(xwskjl),
+            "total_records": len(skjl),
+            "offcampus_count": offcampus_count,
             "campus_count": len(non_summary[COL_CAMPUS].unique()) if len(non_summary) > 0 else 0,
             "coach_count": len(non_summary[COL_COACH].unique()) if len(non_summary) > 0 else 0,
             "total_revenue": float(non_summary[COL_CONFIRMED_REVENUE].sum()) if len(non_summary) > 0 else 0,

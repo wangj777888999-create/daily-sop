@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
+
 interface Props {
   breadcrumbs: string[]
 }
 
 defineProps<Props>()
+
+const router = useRouter()
 </script>
 
 <template>
@@ -21,7 +25,11 @@ defineProps<Props>()
       <button class="w-7 h-7 rounded-md bg-chip border border-border text-[13px] cursor-pointer hover:bg-chip/80 transition-colors">
         🔔
       </button>
-      <button class="w-7 h-7 rounded-md bg-chip border border-border text-[13px] cursor-pointer hover:bg-chip/80 transition-colors">
+      <button
+        @click="router.push('/settings')"
+        class="w-7 h-7 rounded-md bg-chip border border-border text-[13px] cursor-pointer hover:bg-chip/80 transition-colors"
+        title="系统设置"
+      >
         ⚙
       </button>
       <div class="w-6 h-6 rounded-full bg-placeholder-dk cursor-pointer" />

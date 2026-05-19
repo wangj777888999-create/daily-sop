@@ -1,3 +1,4 @@
+import os
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -6,14 +7,26 @@ from api import knowledge_routes
 from api import tool_routes
 from api import photo_checkin_routes
 from api import yolo_training_routes
+from api import settings_routes
 from knowledge.storage import load_all_chunks
 from knowledge.indexer import BM25Index
+from settings_storage import load_settings
 
 logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 从 settings.json 加载 API Key 到环境变量
+    settings = load_settings()
+    api_key = settings.get("anthropic_api_key", "")
+    if api_key:
+        os.environ["ANTHROPIC_API_KEY"] = api_key
+        logging.info("ANTHROPIC_API_KEY loaded from settings.json")
+    else:
+        logging.warning("ANTHROPIC_API_KEY not configured — visit /settings to set it up")
+
+    # 构建 BM25 索引
     index = BM25Index()
     chunks = load_all_chunks()
     if chunks:
@@ -30,3 +43,4 @@ app.include_router(knowledge_routes.router, prefix="/api")
 app.include_router(tool_routes.router, prefix="/api")
 app.include_router(photo_checkin_routes.router, prefix="/api")
 app.include_router(yolo_training_routes.router, prefix="/api")
+app.include_router(settings_routes.router, prefix="/api")

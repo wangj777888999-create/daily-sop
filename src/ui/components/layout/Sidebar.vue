@@ -17,6 +17,7 @@ const navItems = [
 
 const currentKey = computed(() => {
   if (route.path.startsWith('/toolbox')) return 'toolbox'
+  if (route.path === '/settings') return 'settings'
   const item = navItems.find(n => n.path === route.path)
   return item?.key || 'home'
 })
@@ -57,6 +58,24 @@ const navigateTo = (path: string) => {
         />
       </div>
     </nav>
+
+    <!-- 系统设置入口（底部，与主导航分隔） -->
+    <div class="px-2 pb-1">
+      <div
+        @click="navigateTo('/settings')"
+        class="flex items-center gap-2.5 px-3 py-2 rounded-md cursor-pointer transition-colors"
+        :class="currentKey === 'settings'
+          ? 'bg-gradient-to-r from-accent to-accent-dark text-white shadow-nav-active'
+          : 'text-text-body hover:bg-accent/10 hover:text-text-heading'"
+      >
+        <span class="w-4 text-center flex-shrink-0">⚙</span>
+        <span class="text-[13px]">系统设置</span>
+        <span
+          v-if="currentKey === 'settings'"
+          class="ml-auto w-1.5 h-1.5 rounded-full bg-white/60 flex-shrink-0"
+        />
+      </div>
+    </div>
 
     <div class="px-4 py-3 border-t border-border flex items-center gap-2">
       <div class="w-7 h-7 rounded-full bg-placeholder-dk flex-shrink-0" />
