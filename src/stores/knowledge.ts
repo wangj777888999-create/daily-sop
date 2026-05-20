@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { KnowledgeDocument, Folder, SearchResult, RAGRequest, RAGResponse } from '@/types/knowledge'
+import type { KnowledgeDocument, Folder, SearchResult, RAGRequest, RAGResponse, DocCategory } from '@/types/knowledge'
 import * as kbApi from '@/services/knowledgeApi'
 
 interface KnowledgeState {
@@ -10,6 +10,7 @@ interface KnowledgeState {
   searchResults: SearchResult[]
   searchQuery: string
   currentFolderId: string | null
+  currentCategory: DocCategory | null
   viewMode: 'browser' | 'search'
   gridView: boolean
   loading: boolean
@@ -25,6 +26,7 @@ export const useKnowledgeStore = defineStore('knowledge', {
     searchResults: [],
     searchQuery: '',
     currentFolderId: null,
+    currentCategory: null,
     viewMode: 'browser',
     gridView: true,
     loading: false,
@@ -35,6 +37,12 @@ export const useKnowledgeStore = defineStore('knowledge', {
     documentsInCurrentFolder(state): KnowledgeDocument[] {
       if (!state.currentFolderId) return state.documents
       return state.documents.filter(d => d.folder_id === state.currentFolderId)
+    },
+    documentsByCategory(state) {
+      return (cat: DocCategory | null): KnowledgeDocument[] => {
+        if (!cat) return state.documents
+        return state.documents.filter(d => d.category === cat)
+      }
     },
     documentCount(state): number {
       return state.documents.length
@@ -69,8 +77,8 @@ export const useKnowledgeStore = defineStore('knowledge', {
       this.selectedDocument = this.documents.find(d => d.id === docId) || null
     },
 
-    async uploadDocument(file: File, folderId?: string, tags?: string[]) {
-      await kbApi.uploadDocument(file, folderId || this.currentFolderId || undefined, tags)
+    async uploadDocument(file: File, folderId?: string, tags?: string[], category?: string) {
+      await kbApi.uploadDocument(file, folderId || this.currentFolderId || undefined, tags, category)
       this.documents = kbApi.documents.value
       await this.loadTags()
     },
@@ -83,11 +91,11 @@ export const useKnowledgeStore = defineStore('knowledge', {
       }
     },
 
-    async search(query: string) {
+    async search(query: string, category?: string) {
       this.searchQuery = query
       this.searchLoading = true
       try {
-        await kbApi.searchDocuments(query)
+        await kbApi.searchDocuments(query, undefined, 10, category)
         this.searchResults = kbApi.searchResults.value
       } finally {
         this.searchLoading = false
@@ -108,18 +116,24 @@ export const useKnowledgeStore = defineStore('knowledge', {
       }
     },
 
-    async generateContent(prompt: string, docIds?: string[], style: 'policy' | 'report' | 'general' = 'policy'): Promise<RAGResponse> {
+    async generateContent(prompt: string, docIds?: string[], style: 'policy' | 'report' | 'general' = 'policy', category?: string): Promise<RAGResponse> {
       const request: RAGRequest = {
         prompt,
         doc_ids: docIds,
         style,
         top_k: 5,
+        category,
       }
       return kbApi.generateContent(request)
     },
 
     setFolder(folderId: string | null) {
       this.currentFolderId = folderId
+      this.loadDocuments()
+    },
+
+    setCategory(cat: DocCategory | null) {
+      this.currentCategory = cat
       this.loadDocuments()
     },
   },

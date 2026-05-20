@@ -9,6 +9,8 @@ export interface Folder {
   created_at: string
 }
 
+export type DocCategory = 'policy' | 'activity' | 'data'
+
 export interface KnowledgeDocument {
   id: string
   name: string
@@ -21,6 +23,7 @@ export interface KnowledgeDocument {
   parsed_at: string | null
   created_at: string
   updated_at: string
+  category: DocCategory
 }
 
 export interface ParsedChunk {
@@ -46,6 +49,7 @@ export interface SearchResult {
   heading_path: string
   score: number
   page: number
+  category?: string
 }
 
 export interface RAGRequest {
@@ -53,6 +57,7 @@ export interface RAGRequest {
   doc_ids?: string[]
   style: 'policy' | 'report' | 'polish' | 'general'
   top_k: number
+  category?: string
 }
 
 export interface RAGResponse {

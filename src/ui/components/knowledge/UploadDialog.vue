@@ -2,9 +2,18 @@
 import { ref } from 'vue'
 import Card from '@/ui/components/common/Card.vue'
 import Button from '@/ui/components/common/Button.vue'
+import type { DocCategory } from '@/types/knowledge'
+
+interface Props {
+  defaultCategory?: DocCategory
+}
+
+withDefaults(defineProps<Props>(), {
+  defaultCategory: 'policy',
+})
 
 const emit = defineEmits<{
-  upload: [file: File, folderId: string, tags: string[]]
+  upload: [file: File, folderId: string, tags: string[], category: DocCategory]
   close: []
 }>()
 
@@ -12,6 +21,13 @@ const dragOver = ref(false)
 const file = ref<File | null>(null)
 const folderId = ref('')
 const tagsInput = ref('')
+const selectedCategory = ref<DocCategory>('policy')
+
+const categories: { value: DocCategory; label: string }[] = [
+  { value: 'policy', label: '政策文件' },
+  { value: 'activity', label: '活动报告' },
+  { value: 'data', label: '经营数据报告' },
+]
 
 const allowedTypes = ['.pdf', '.docx', '.xlsx', '.xls', '.txt', '.md']
 
@@ -56,7 +72,7 @@ function validateAndSet(f: File) {
 function handleUpload() {
   if (!file.value) return
   const tags = tagsInput.value.split(',').map(t => t.trim()).filter(Boolean)
-  emit('upload', file.value, folderId.value, tags)
+  emit('upload', file.value, folderId.value, tags, selectedCategory.value)
 }
 
 function formatSize(bytes: number): string {
@@ -91,6 +107,23 @@ function formatSize(bytes: number): string {
           {{ file.name }} ({{ formatSize(file.size) }})
         </div>
         <div class="text-[10px] text-text-light">支持 PDF、DOCX、XLSX、TXT、MD，最大 100MB</div>
+      </div>
+
+      <div class="mb-2">
+        <label class="text-[11px] text-text-light mb-1 block">文档分类</label>
+        <div class="flex gap-2">
+          <button
+            v-for="cat in categories"
+            :key="cat.value"
+            class="flex-1 py-1.5 text-[12px] rounded-md border transition-colors"
+            :class="selectedCategory === cat.value
+              ? 'border-accent bg-accent-light text-accent font-medium'
+              : 'border-border text-text-body hover:border-accent'"
+            @click="selectedCategory = cat.value"
+          >
+            {{ cat.label }}
+          </button>
+        </div>
       </div>
 
       <div class="mb-2">

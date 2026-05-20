@@ -2,49 +2,67 @@
 import { ref, computed, onMounted } from 'vue'
 import Card from '@/ui/components/common/Card.vue'
 import Button from '@/ui/components/common/Button.vue'
-import Chip from '@/ui/components/common/Chip.vue'
-import RowTitle from '@/ui/components/common/RowTitle.vue'
 import SearchBox from '@/ui/components/common/SearchBox.vue'
 import DocumentCard from '@/ui/components/knowledge/DocumentCard.vue'
 import UploadDialog from '@/ui/components/knowledge/UploadDialog.vue'
-import SearchResultCard from '@/ui/components/knowledge/SearchResultCard.vue'
 import DocumentPreview from '@/ui/components/knowledge/DocumentPreview.vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
-import { getDocumentDownloadUrl } from '@/services/knowledgeApi'
+import { getDocumentDownloadUrl, generateContent } from '@/services/knowledgeApi'
+import type { DocCategory, RAGResponse } from '@/types/knowledge'
 
 const store = useKnowledgeStore()
 
-const searchQuery = ref('')
-const searchText = ref('')
+// Tab management
+type TabId = 'policy' | 'activity' | 'data' | 'qa' | 'write'
+const activeTab = ref<TabId>('policy')
+
+const tabs: { id: TabId; label: string }[] = [
+  { id: 'policy', label: '政策文件' },
+  { id: 'activity', label: '活动报告' },
+  { id: 'data', label: '经营数据报告' },
+  { id: 'qa', label: '智能问答' },
+  { id: 'write', label: '辅助撰写' },
+]
+
+// Doc management tabs
+const docSearchQuery = ref('')
 const showUpload = ref(false)
+const uploadCategory = ref<DocCategory>('policy')
 const previewDocId = ref('')
 const previewDocName = ref('')
-const activeTag = ref('')
 
-onMounted(async () => {
-  await Promise.all([store.loadDocuments(), store.loadFolders(), store.loadTags()])
-})
-
-const selectedFolderName = computed(() => {
-  if (!store.currentFolderId) return '全部文档'
-  return store.folders.find(f => f.id === store.currentFolderId)?.name || '全部文档'
-})
-
-const fileCount = computed(() => store.documentsInCurrentFolder.length)
-
-function handleSearch() {
-  const q = store.viewMode === 'search' ? searchText.value : searchQuery.value
-  if (q.trim()) {
-    store.search(q.trim())
-  }
+// Category map for doc tabs
+const tabToCategory: Record<string, DocCategory> = {
+  policy: 'policy',
+  activity: 'activity',
+  data: 'data',
+}
+const categoryLabels: Record<DocCategory, string> = {
+  policy: '政策文件',
+  activity: '活动报告',
+  data: '经营数据报告',
 }
 
-function handleSearchKeyup(e: KeyboardEvent) {
-  if (e.key === 'Enter') handleSearch()
+function currentDocCategory(): DocCategory | null {
+  return tabToCategory[activeTab.value] ?? null
 }
 
-function handleUpload(file: File, folderId: string, tags: string[]) {
-  store.uploadDocument(file, folderId || undefined, tags)
+const currentDocs = computed(() => {
+  const cat = currentDocCategory()
+  const all = store.documentsByCategory(cat)
+  const q = docSearchQuery.value.trim().toLowerCase()
+  if (!q) return all
+  return all.filter(d => d.name.toLowerCase().includes(q) || d.tags?.some(t => t.toLowerCase().includes(q)))
+})
+
+function openUpload() {
+  const cat = currentDocCategory()
+  uploadCategory.value = cat ?? 'policy'
+  showUpload.value = true
+}
+
+function handleUpload(file: File, folderId: string, tags: string[], category: DocCategory) {
+  store.uploadDocument(file, folderId || undefined, tags, category)
   showUpload.value = false
 }
 
@@ -66,219 +84,399 @@ function handleDelete(docId: string) {
   }
 }
 
-function handleNewFolder() {
-  const name = prompt('输入文件夹名称：')
-  if (name?.trim()) {
-    store.createFolder(name.trim())
+// Q&A tab
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  sources?: RAGResponse['sources']
+  expandedSources?: boolean
+}
+
+const qaCategory = ref<DocCategory | ''>('')
+const qaInput = ref('')
+const qaLoading = ref(false)
+const qaMessages = ref<ChatMessage[]>([])
+const qaError = ref('')
+
+const qaCategoryOptions: { value: DocCategory | ''; label: string }[] = [
+  { value: '', label: '全部' },
+  { value: 'policy', label: '政策文件' },
+  { value: 'activity', label: '活动报告' },
+  { value: 'data', label: '经营数据报告' },
+]
+
+async function sendQA() {
+  const prompt = qaInput.value.trim()
+  if (!prompt || qaLoading.value) return
+  qaMessages.value.push({ role: 'user', content: prompt })
+  qaInput.value = ''
+  qaLoading.value = true
+  qaError.value = ''
+  try {
+    const res = await generateContent({
+      prompt,
+      style: 'general',
+      top_k: 5,
+      category: qaCategory.value || undefined,
+    })
+    qaMessages.value.push({
+      role: 'assistant',
+      content: res.generated_text,
+      sources: res.sources,
+      expandedSources: false,
+    })
+  } catch (e: any) {
+    qaError.value = e?.message || '生成失败，请重试'
+  } finally {
+    qaLoading.value = false
   }
 }
 
-const typeColors: Record<string, [string, string]> = {
-  PDF: ['#C17F3A', '#FFE8D6'],
-  XLSX: ['#5B8F7A', '#D6EDE7'],
-  DOCX: ['#3A7FC1', '#D6E4ED'],
-  TXT: ['#6B5F52', '#E5DDD0'],
-  MD: ['#7B6BAA', '#E8E2F6'],
+function qaKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    sendQA()
+  }
 }
 
-const fileTypes = ['PDF', 'DOCX', 'XLSX', 'TXT', 'MD']
+// Write tab
+const writeCategory = ref<DocCategory | ''>('')
+const writeStyle = ref<'policy' | 'report' | 'general'>('general')
+const writePrompt = ref('')
+const writeLoading = ref(false)
+const writeResult = ref('')
+const writeSources = ref<RAGResponse['sources']>([])
+const writeError = ref('')
+const writeCopied = ref(false)
+
+const writeCategoryOptions = qaCategoryOptions
+const writeStyleOptions: { value: 'policy' | 'report' | 'general'; label: string }[] = [
+  { value: 'policy', label: '政策风格' },
+  { value: 'report', label: '报告风格' },
+  { value: 'general', label: '通用' },
+]
+
+async function generateDraft() {
+  const prompt = writePrompt.value.trim()
+  if (!prompt || writeLoading.value) return
+  writeLoading.value = true
+  writeError.value = ''
+  writeResult.value = ''
+  writeSources.value = []
+  try {
+    const res = await generateContent({
+      prompt,
+      style: writeStyle.value,
+      top_k: 5,
+      category: writeCategory.value || undefined,
+    })
+    writeResult.value = res.generated_text
+    writeSources.value = res.sources
+  } catch (e: any) {
+    writeError.value = e?.message || '生成失败，请重试'
+  } finally {
+    writeLoading.value = false
+  }
+}
+
+async function copyResult() {
+  if (!writeResult.value) return
+  await navigator.clipboard.writeText(writeResult.value)
+  writeCopied.value = true
+  setTimeout(() => { writeCopied.value = false }, 2000)
+}
+
+onMounted(async () => {
+  await Promise.all([store.loadDocuments(), store.loadFolders(), store.loadTags()])
+})
 </script>
 
 <template>
   <div class="flex flex-col h-full">
-    <div class="flex items-center gap-2 mb-3.5">
-      <SearchBox v-model="searchQuery" placeholder="🔍 语义搜索知识库…" class="flex-1" @keyup.enter="handleSearchKeyup" />
-      <Button variant="primary" icon="📤" @click="showUpload = true">上传文档</Button>
-      <Button variant="secondary" @click="handleNewFolder">新建文件夹</Button>
+    <!-- Tab bar -->
+    <div class="flex items-center border-b border-border mb-4 gap-0">
+      <button
+        v-for="tab in tabs"
+        :key="tab.id"
+        class="px-4 py-2 text-[13px] font-medium transition-colors whitespace-nowrap"
+        :class="activeTab === tab.id
+          ? 'border-b-2 border-accent text-accent'
+          : 'text-text-light hover:text-text-body border-b-2 border-transparent'"
+        @click="activeTab = tab.id"
+      >
+        {{ tab.label }}
+      </button>
     </div>
 
-    <div class="flex gap-2 mb-3">
-      <Chip :active="store.viewMode === 'browser'" @click="store.viewMode = 'browser'">文件浏览器</Chip>
-      <Chip :active="store.viewMode === 'search'" @click="store.viewMode = 'search'">搜索优先</Chip>
-    </div>
+    <!-- Doc management tabs: policy / activity / data -->
+    <template v-if="activeTab === 'policy' || activeTab === 'activity' || activeTab === 'data'">
+      <div class="flex items-center gap-2 mb-4">
+        <SearchBox
+          v-model="docSearchQuery"
+          :placeholder="`搜索${categoryLabels[tabToCategory[activeTab]]}...`"
+          class="flex-1"
+        />
+        <Button variant="primary" icon="📤" @click="openUpload">上传文档</Button>
+      </div>
 
-    <!-- File Browser Mode -->
-    <template v-if="store.viewMode === 'browser'">
-      <div class="flex gap-3.5 flex-1 min-h-0">
-        <Card class="w-[216px] flex-shrink-0 flex flex-col">
-          <RowTitle label="文件夹" />
-          <div class="flex-1 overflow-y-auto">
-            <div
-              class="flex items-center gap-2 px-2.5 py-1.5 rounded-md mb-0.5 cursor-pointer text-[12px]"
-              :class="!store.currentFolderId
-                ? 'bg-accent-light text-accent border border-accent'
-                : 'text-text-body hover:bg-page-bg'"
-              @click="store.setFolder(null)"
-            >
-              <span>📁</span>
-              <span class="flex-1">全部文档</span>
-              <span class="text-[10px] text-text-light">{{ store.documents.length }}</span>
-            </div>
-            <div
-              v-for="folder in store.folders"
-              :key="folder.id"
-              class="flex items-center gap-2 px-2.5 py-1.5 rounded-md mb-0.5 cursor-pointer text-[12px]"
-              :class="store.currentFolderId === folder.id
-                ? 'bg-accent-light text-accent border border-accent'
-                : 'text-text-body hover:bg-page-bg'"
-              @click="store.setFolder(folder.id)"
-            >
-              <span>📁</span>
-              <span class="flex-1">{{ folder.name }}</span>
-            </div>
-          </div>
-
-          <div class="mt-3 pt-2.5 border-t border-border">
-            <div class="text-[10px] text-text-light mb-1.5">标签筛选</div>
-            <div class="flex flex-wrap gap-1">
-              <Chip
-                v-for="t in store.allTags"
-                :key="t"
-                :active="activeTag === t"
-                style="font-size: 10px"
-                @click="activeTag = activeTag === t ? '' : t"
-              >
-                {{ t }}
-              </Chip>
-            </div>
-          </div>
+      <!-- Loading -->
+      <div v-if="store.loading" class="grid grid-cols-3 gap-2.5">
+        <Card v-for="i in 6" :key="i" class="h-[120px] animate-pulse">
+          <div class="h-[58px] rounded-md bg-placeholder mb-2" />
+          <div class="h-3 w-3/4 bg-placeholder rounded mb-1" />
+          <div class="h-2 w-1/2 bg-placeholder rounded" />
         </Card>
+      </div>
 
-        <div class="flex-1 flex flex-col min-w-0">
-          <div class="flex items-center gap-2 mb-3">
-            <span class="text-[13px] font-bold text-text-heading">{{ selectedFolderName }}</span>
-            <span class="text-[11px] text-text-light">{{ fileCount }} 个文件</span>
-            <div class="ml-auto flex gap-1.5">
-              <Chip :active="!store.gridView" style="font-size: 11px" @click="store.gridView = false">≡ 列表</Chip>
-              <Chip :active="store.gridView" accent style="font-size: 11px" @click="store.gridView = true">⊞ 网格</Chip>
-            </div>
-          </div>
-
-          <!-- Loading state -->
-          <div v-if="store.loading" class="grid grid-cols-3 gap-2.5">
-            <Card v-for="i in 6" :key="i" class="h-[120px] animate-pulse">
-              <div class="h-[58px] rounded-md bg-placeholder mb-2" />
-              <div class="h-3 w-3/4 bg-placeholder rounded mb-1" />
-              <div class="h-2 w-1/2 bg-placeholder rounded" />
-            </Card>
-          </div>
-
-          <!-- Empty state -->
-          <div v-else-if="fileCount === 0" class="flex-1 flex items-center justify-center">
-            <div class="text-center">
-              <div class="text-[36px] mb-2">📂</div>
-              <p class="text-[13px] text-text-body mb-1">知识库为空</p>
-              <p class="text-[11px] text-text-light mb-3">上传文档开始构建你的知识库</p>
-              <Button variant="primary" @click="showUpload = true">📤 上传第一篇文档</Button>
-            </div>
-          </div>
-
-          <!-- Document grid -->
-          <div v-else :class="store.gridView ? 'grid grid-cols-3 gap-2.5' : 'flex flex-col gap-2'">
-            <DocumentCard
-              v-for="doc in store.documentsInCurrentFolder"
-              :key="doc.id"
-              :document="doc"
-              @preview="handlePreview"
-              @download="handleDownload"
-              @delete="handleDelete"
-            />
-          </div>
+      <!-- Empty state -->
+      <div v-else-if="currentDocs.length === 0" class="flex-1 flex items-center justify-center">
+        <div class="text-center">
+          <div class="text-[36px] mb-2">📂</div>
+          <p class="text-[13px] text-text-body mb-1">暂无{{ categoryLabels[tabToCategory[activeTab]] }}</p>
+          <p class="text-[11px] text-text-light mb-3">点击上传按钮添加文档</p>
+          <Button variant="primary" @click="openUpload">📤 上传文档</Button>
         </div>
+      </div>
+
+      <!-- Doc grid -->
+      <div v-else class="grid grid-cols-3 gap-2.5">
+        <DocumentCard
+          v-for="doc in currentDocs"
+          :key="doc.id"
+          :document="doc"
+          @preview="handlePreview"
+          @download="handleDownload"
+          @delete="handleDelete"
+        />
       </div>
     </template>
 
-    <!-- Search Mode -->
-    <template v-else>
-      <div class="max-w-[680px] mx-auto mb-5 text-center">
-        <h2 class="text-[18px] font-bold text-text-heading mb-1">在知识库中搜索</h2>
-        <p class="text-[12px] text-text-light mb-3.5">语义搜索 · 向量相似度检索 · 共 {{ store.documents.length }} 个文档</p>
-
-        <div class="flex items-center gap-2.5 bg-card-bg border-2 border-accent rounded-xl px-4 py-2.5 text-left">
-          <span class="text-[16px]">🔍</span>
-          <input
-            v-model="searchText"
-            type="text"
-            placeholder="输入查询内容，如：校园安全管理政策..."
-            class="flex-1 text-[13px] text-text-body bg-transparent outline-none"
-            @keyup.enter="handleSearch"
-          />
-          <Chip style="font-size: 10px">语义</Chip>
-          <Button size="small" variant="primary" @click="handleSearch">搜索</Button>
+    <!-- Q&A tab -->
+    <template v-if="activeTab === 'qa'">
+      <div class="flex flex-col h-full min-h-0">
+        <!-- Category selector -->
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-[12px] text-text-light">检索范围：</span>
+          <button
+            v-for="opt in qaCategoryOptions"
+            :key="opt.value"
+            class="px-3 py-1 text-[12px] rounded-full border transition-colors"
+            :class="qaCategory === opt.value
+              ? 'border-accent bg-accent-light text-accent font-medium'
+              : 'border-border text-text-body hover:border-accent'"
+            @click="qaCategory = opt.value"
+          >
+            {{ opt.label }}
+          </button>
         </div>
-      </div>
 
-      <div class="flex gap-3.5 flex-1 min-h-0">
-        <Card class="w-[196px] flex-shrink-0">
-          <RowTitle label="筛选" />
-          <div class="text-[10px] text-text-light mb-1">文件类型</div>
-          <div class="text-[11px] text-text-body space-y-1 mb-3">
-            <div v-for="t in fileTypes" :key="t" class="flex items-center gap-1.5 py-1">
-              <div
-                class="w-3 h-3 rounded border bg-chip border-border"
-                :style="{ backgroundColor: typeColors[t]?.[1] || '#eee' }"
-              />
-              {{ t }}
+        <!-- Messages -->
+        <div class="flex-1 overflow-y-auto flex flex-col gap-3 mb-3 min-h-0">
+          <div v-if="qaMessages.length === 0" class="flex-1 flex items-center justify-center text-center">
+            <div>
+              <div class="text-[32px] mb-2">💬</div>
+              <p class="text-[13px] text-text-body mb-1">向知识库提问</p>
+              <p class="text-[11px] text-text-light">可以选择检索范围后输入问题</p>
             </div>
           </div>
 
-          <div class="text-[10px] text-text-light mb-1 mt-3">时间范围</div>
-          <div class="text-[11px] text-text-body space-y-1">
-            <div class="flex items-center gap-1.5 py-1">
-              <div class="w-3 h-3 rounded-full bg-chip border-border" />
-              最近 7 天
+          <template v-for="(msg, idx) in qaMessages" :key="idx">
+            <!-- User message -->
+            <div v-if="msg.role === 'user'" class="flex justify-end">
+              <div class="max-w-[70%] bg-accent text-white rounded-xl px-4 py-2.5 text-[13px] leading-relaxed">
+                {{ msg.content }}
+              </div>
             </div>
-            <div class="flex items-center gap-1.5 py-1">
-              <div class="w-3 h-3 rounded-full bg-chip border-border" />
-              最近 30 天
+
+            <!-- Assistant message -->
+            <div v-else class="flex flex-col gap-1.5">
+              <div class="max-w-[85%] bg-page-bg rounded-xl px-4 py-3 text-[13px] text-text-body leading-relaxed border border-border whitespace-pre-wrap">
+                {{ msg.content }}
+              </div>
+              <!-- Sources -->
+              <div v-if="msg.sources && msg.sources.length > 0" class="ml-2">
+                <button
+                  class="text-[11px] text-text-light hover:text-accent transition-colors"
+                  @click="msg.expandedSources = !msg.expandedSources"
+                >
+                  {{ msg.expandedSources ? '▲' : '▶' }} 参考来源（{{ msg.sources.length }}）
+                </button>
+                <div v-if="msg.expandedSources" class="mt-1.5 flex flex-col gap-1.5">
+                  <div
+                    v-for="(src, si) in msg.sources"
+                    :key="si"
+                    class="bg-card-bg border border-border rounded-lg px-3 py-2 text-[11px]"
+                  >
+                    <div class="font-medium text-text-heading mb-0.5">{{ src.doc_name }}</div>
+                    <div class="text-text-light mb-1" v-if="src.location">{{ src.location }}</div>
+                    <div class="text-text-body leading-relaxed" v-if="src.content">{{ src.content }}</div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="flex items-center gap-1.5 py-1">
-              <div class="w-3 h-3 rounded-full bg-chip border-border" />
-              全部时间
-            </div>
-          </div>
-        </Card>
-
-        <div class="flex-1 flex flex-col gap-2.5">
-          <div class="text-[11px] text-text-light" v-if="!store.searchLoading">
-            找到 {{ store.searchResults.length }} 个结果
-          </div>
-
-          <div v-if="store.searchLoading" class="text-center py-8">
-            <div class="text-[13px] text-text-light">搜索中...</div>
-          </div>
-
-          <template v-else-if="store.searchResults.length > 0">
-            <SearchResultCard
-              v-for="r in store.searchResults"
-              :key="r.doc_id + r.heading_path"
-              :result="r"
-              @view="handlePreview"
-            />
           </template>
 
-          <div v-else-if="store.searchQuery" class="text-center py-8">
-            <div class="text-[28px] mb-2">🔍</div>
-            <p class="text-[13px] text-text-light">没有找到匹配的文档</p>
-            <p class="text-[11px] text-text-light">尝试使用不同的关键词搜索</p>
+          <!-- Loading indicator -->
+          <div v-if="qaLoading" class="flex items-center gap-2 text-[12px] text-text-light">
+            <div class="w-2 h-2 rounded-full bg-accent animate-bounce" style="animation-delay: 0ms" />
+            <div class="w-2 h-2 rounded-full bg-accent animate-bounce" style="animation-delay: 150ms" />
+            <div class="w-2 h-2 rounded-full bg-accent animate-bounce" style="animation-delay: 300ms" />
           </div>
+
+          <!-- Error -->
+          <div v-if="qaError" class="text-[12px] text-red-500 px-2">{{ qaError }}</div>
+        </div>
+
+        <!-- Input -->
+        <div class="flex items-end gap-2 border border-border rounded-xl px-3 py-2 bg-card-bg">
+          <textarea
+            v-model="qaInput"
+            placeholder="输入问题，按 Enter 发送（Shift+Enter 换行）..."
+            rows="2"
+            class="flex-1 text-[13px] text-text-body bg-transparent outline-none resize-none"
+            @keydown="qaKeydown"
+          />
+          <Button variant="primary" size="small" :disabled="!qaInput.trim() || qaLoading" @click="sendQA">发送</Button>
         </div>
       </div>
     </template>
 
-    <!-- Upload Dialog -->
-    <UploadDialog
-      v-if="showUpload"
-      @upload="handleUpload"
-      @close="showUpload = false"
-    />
+    <!-- Write tab -->
+    <template v-if="activeTab === 'write'">
+      <div class="flex gap-4 flex-1 min-h-0">
+        <!-- Left panel 40% -->
+        <div class="w-[40%] flex flex-col gap-3">
+          <div>
+            <label class="text-[11px] text-text-light mb-1 block">参考分类</label>
+            <div class="flex flex-wrap gap-1.5">
+              <button
+                v-for="opt in writeCategoryOptions"
+                :key="opt.value"
+                class="px-3 py-1 text-[12px] rounded-full border transition-colors"
+                :class="writeCategory === opt.value
+                  ? 'border-accent bg-accent-light text-accent font-medium'
+                  : 'border-border text-text-body hover:border-accent'"
+                @click="writeCategory = opt.value"
+              >
+                {{ opt.label }}
+              </button>
+            </div>
+          </div>
 
-    <!-- Document Preview -->
-    <DocumentPreview
-      v-if="previewDocId"
-      :doc-id="previewDocId"
-      :doc-name="previewDocName"
-      @close="previewDocId = ''"
-    />
+          <div>
+            <label class="text-[11px] text-text-light mb-1 block">写作风格</label>
+            <div class="flex gap-1.5">
+              <button
+                v-for="opt in writeStyleOptions"
+                :key="opt.value"
+                class="flex-1 py-1.5 text-[12px] rounded-md border transition-colors"
+                :class="writeStyle === opt.value
+                  ? 'border-accent bg-accent-light text-accent font-medium'
+                  : 'border-border text-text-body hover:border-accent'"
+                @click="writeStyle = opt.value"
+              >
+                {{ opt.label }}
+              </button>
+            </div>
+          </div>
+
+          <div class="flex-1 flex flex-col">
+            <label class="text-[11px] text-text-light mb-1 block">内容需求</label>
+            <textarea
+              v-model="writePrompt"
+              placeholder="描述你想写的段落内容和要求..."
+              class="flex-1 w-full bg-page-bg border border-border rounded-lg px-3 py-2.5 text-[13px] text-text-body outline-none focus:border-accent resize-none min-h-[160px]"
+            />
+          </div>
+
+          <Button
+            variant="primary"
+            class="w-full justify-center"
+            :disabled="!writePrompt.trim() || writeLoading"
+            @click="generateDraft"
+          >
+            {{ writeLoading ? '生成中...' : '生成草稿' }}
+          </Button>
+
+          <div v-if="writeError" class="text-[12px] text-red-500">{{ writeError }}</div>
+        </div>
+
+        <!-- Right panel 60% -->
+        <div class="flex-1 flex flex-col gap-2 min-h-0">
+          <div class="flex items-center justify-between">
+            <span class="text-[13px] font-semibold text-text-heading">生成结果</span>
+            <Button
+              v-if="writeResult"
+              variant="secondary"
+              size="small"
+              @click="copyResult"
+            >
+              {{ writeCopied ? '已复制 ✓' : '复制' }}
+            </Button>
+          </div>
+
+          <div class="flex-1 overflow-y-auto">
+            <!-- Placeholder -->
+            <div
+              v-if="!writeResult && !writeLoading"
+              class="h-full flex items-center justify-center text-center border-2 border-dashed border-border rounded-xl"
+            >
+              <div>
+                <div class="text-[32px] mb-2">✍️</div>
+                <p class="text-[13px] text-text-light">填写需求后点击「生成草稿」</p>
+              </div>
+            </div>
+
+            <!-- Loading -->
+            <div v-else-if="writeLoading" class="h-full flex items-center justify-center">
+              <div class="text-center">
+                <div class="flex gap-1.5 justify-center mb-2">
+                  <div class="w-2 h-2 rounded-full bg-accent animate-bounce" style="animation-delay: 0ms" />
+                  <div class="w-2 h-2 rounded-full bg-accent animate-bounce" style="animation-delay: 150ms" />
+                  <div class="w-2 h-2 rounded-full bg-accent animate-bounce" style="animation-delay: 300ms" />
+                </div>
+                <p class="text-[12px] text-text-light">正在生成...</p>
+              </div>
+            </div>
+
+            <!-- Result -->
+            <div v-else class="flex flex-col gap-3">
+              <pre class="whitespace-pre-wrap text-[13px] text-text-body leading-relaxed bg-page-bg border border-border rounded-xl px-4 py-3">{{ writeResult }}</pre>
+
+              <!-- Sources -->
+              <div v-if="writeSources.length > 0">
+                <p class="text-[11px] text-text-light mb-1.5">参考来源</p>
+                <div class="flex flex-col gap-1.5">
+                  <div
+                    v-for="(src, si) in writeSources"
+                    :key="si"
+                    class="bg-card-bg border border-border rounded-lg px-3 py-2 text-[11px]"
+                  >
+                    <div class="font-medium text-text-heading mb-0.5">{{ src.doc_name }}</div>
+                    <div class="text-text-light" v-if="src.location">{{ src.location }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
   </div>
+
+  <!-- Upload Dialog -->
+  <UploadDialog
+    v-if="showUpload"
+    :default-category="uploadCategory"
+    @upload="handleUpload"
+    @close="showUpload = false"
+  />
+
+  <!-- Document Preview -->
+  <DocumentPreview
+    v-if="previewDocId"
+    :doc-id="previewDocId"
+    :doc-name="previewDocName"
+    @close="previewDocId = ''"
+  />
 </template>

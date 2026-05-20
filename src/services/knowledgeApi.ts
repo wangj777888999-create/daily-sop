@@ -46,7 +46,8 @@ export async function fetchDocuments(params?: {
 export async function uploadDocument(
   file: File,
   folder_id?: string,
-  tags?: string[]
+  tags?: string[],
+  category?: string
 ): Promise<KnowledgeDocument | null> {
   docsLoading.value = true
   try {
@@ -54,6 +55,7 @@ export async function uploadDocument(
     formData.append('file', file)
     if (folder_id) formData.append('folder_id', folder_id)
     if (tags && tags.length > 0) formData.append('tags', tags.join(','))
+    if (category) formData.append('category', category)
     const data = await request<KnowledgeDocument>(`${API_BASE}/documents`, {
       method: 'POST',
       body: formData,
@@ -71,12 +73,15 @@ export async function deleteDocument(id: string): Promise<boolean> {
   return true
 }
 
-export async function searchDocuments(query: string, doc_ids?: string[], top_k: number = 10): Promise<SearchResult[]> {
+export async function searchDocuments(query: string, doc_ids?: string[], top_k: number = 10, category?: string): Promise<SearchResult[]> {
   searchLoading.value = true
   try {
     const body: any = { query, top_k }
     if (doc_ids && doc_ids.length > 0) {
       body.doc_ids = doc_ids
+    }
+    if (category) {
+      body.category = category
     }
     const data = await request<SearchResult[]>(`${API_BASE}/search`, {
       method: 'POST',
