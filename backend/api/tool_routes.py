@@ -54,6 +54,18 @@ router = APIRouter()
 _logger = logging.getLogger(__name__)
 
 
+def _kb_bm25():
+    """懒加载 BM25 索引（避免模块级循环导入）"""
+    from main import app  # noqa: PLC0415 — lazy import intentional
+    return getattr(app.state, "bm25_index", None)
+
+
+def _kb_vs():
+    """懒加载向量存储（避免模块级循环导入）"""
+    from main import app  # noqa: PLC0415
+    return getattr(app.state, "vector_store", None)
+
+
 def _push_excel_to_kb(excel_bytes: bytes, doc_name: str) -> None:
     """将 Excel 报告自动索引进知识库的 data 分类。失败只记 warning，不影响主流程。"""
     try:
@@ -61,27 +73,26 @@ def _push_excel_to_kb(excel_bytes: bytes, doc_name: str) -> None:
         from knowledge.chunker import chunk_document
         from knowledge.storage import save_chunks, get_all_docs, save_doc, delete_doc_chunks, delete_doc
         from knowledge.models import KnowledgeDocument, DocType, KBCategory
-        from knowledge.indexer import BM25Index
-        from knowledge.vector_store import VectorStore
-        from main import app
+        from datetime import datetime
 
-        # ── 去重：已有同名文档先删除 ──────────────────────────────
-        existing_docs = get_all_docs()
+        bm25 = _kb_bm25()
+        vs = _kb_vs()
+
+        # ── 去重：已有同名文档先删除（原子化：全部删完再写入）─────
+        existing_docs = [d for d in get_all_docs() if d.name == doc_name]
         for old_doc in existing_docs:
-            if old_doc.name == doc_name:
-                old_id = old_doc.id
-                try:
-                    old_index: BM25Index = getattr(app.state, "bm25_index", None)
-                    if old_index:
-                        old_index.remove_doc(old_id)
-                    old_vs: VectorStore = getattr(app.state, "vector_store", None)
-                    if old_vs:
-                        old_vs.remove_doc(old_doc.category.value, old_id)
-                    delete_doc_chunks(old_id)
-                    delete_doc(old_id)
-                    _logger.info(f"[KB push] 已删除旧文档: {doc_name} (id={old_id})")
-                except Exception as e_del:
-                    _logger.warning(f"[KB push] 删除旧文档失败: {e_del}")
+            old_id = old_doc.id
+            try:
+                if bm25:
+                    bm25.remove_doc(old_id)
+                if vs:
+                    vs.remove_doc(old_doc.category.value, old_id)
+                delete_doc_chunks(old_id)
+                delete_doc(old_id)
+                _logger.info(f"[KB push] 已删除旧文档: {doc_name} (id={old_id})")
+            except Exception as e_del:
+                # 删除失败不阻塞写入新版本，仅记录
+                _logger.warning(f"[KB push] 删除旧文档 {old_id} 失败，继续写入新版本: {e_del}")
 
         # ── 写文件到 knowledge_files/{doc_id}/ ────────────────────
         doc_id = uuid.uuid4().hex[:12]
@@ -91,28 +102,33 @@ def _push_excel_to_kb(excel_bytes: bytes, doc_name: str) -> None:
         with open(file_path, "wb") as fh:
             fh.write(excel_bytes)
 
-        # ── 解析 → 分块 ───────────────────────────────────────────
+        # ── 解析 → 分块（过滤无文本块，防止索引写入异常）────────
         content_hash = compute_content_hash(file_path)
         parsed = parse_document(file_path, "XLSX")
         parsed.doc_id = doc_id
-        chunks = chunk_document(parsed)
-        for c in chunks:
+        raw_chunks = chunk_document(parsed)
+        chunks = []
+        for i, c in enumerate(raw_chunks):
+            if not c.get("text", "").strip():
+                continue  # 跳过空文本块，避免向量化失败
             c["doc_id"] = doc_id
             c["doc_name"] = doc_name
             c["category"] = KBCategory.DATA.value
-            c["id"] = f"{doc_id}_chunk_{c.get('chunk_index', 0)}"
+            c["id"] = f"{doc_id}_chunk_{c.get('chunk_index', i)}"
+            chunks.append(c)
+
+        if not chunks:
+            _logger.warning(f"[KB push] {doc_name} 解析后无有效文本块，跳过索引")
+            return
 
         # ── 写入 BM25 + 向量索引 ──────────────────────────────────
         save_chunks(doc_id, chunks)
-        bm25: BM25Index = getattr(app.state, "bm25_index", None)
         if bm25:
             bm25.add_chunks(chunks)
-        vs: VectorStore = getattr(app.state, "vector_store", None)
         if vs:
             vs.add_chunks(KBCategory.DATA.value, chunks)
 
         # ── 保存文档元数据 ────────────────────────────────────────
-        from datetime import datetime
         doc = KnowledgeDocument(
             id=doc_id,
             name=doc_name,
@@ -430,9 +446,11 @@ async def campus_monthly_process(
 
     # 自动推送报告到知识库
     try:
-        with open(result["filepath"], "rb") as _f:
-            _excel_bytes = _f.read()
-        _push_excel_to_kb(_excel_bytes, f"{year}年{month}月校内月度分析.xlsx")
+        _fp = result.get("filepath", "")
+        if _fp and os.path.exists(_fp):
+            with open(_fp, "rb") as _f:
+                _excel_bytes = _f.read()
+            _push_excel_to_kb(_excel_bytes, f"{year}年{month}月校内月度分析.xlsx")
     except Exception as _e:
         _logger.warning(f"[KB push] 校内月度分析推送失败: {_e}")
 
@@ -658,8 +676,8 @@ async def offcampus_monthly_process(
         f.write(result["excel_bytes"])
 
     summary = result["summary"]
-    year = year or date.today().year
-    month = month or date.today().month
+    year = year if year != 0 else date.today().year
+    month = month if month != 0 else date.today().month
     analysis_id = save_monthly_analysis({
         "year": year,
         "month": month,
@@ -933,8 +951,8 @@ async def discount_rate_generate(
         f.write(result["excel_bytes"])
 
     summary = result["summary"]
-    effective_year = year or date.today().year
-    effective_month = month or date.today().month
+    effective_year = year if year != 0 else date.today().year
+    effective_month = month if month != 0 else date.today().month
     analysis_id = save_monthly_analysis({
         "year": effective_year,
         "month": effective_month,

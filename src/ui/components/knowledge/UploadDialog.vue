@@ -8,7 +8,7 @@ interface Props {
   defaultCategory?: DocCategory
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   defaultCategory: 'policy',
 })
 
@@ -21,7 +21,7 @@ const dragOver = ref(false)
 const file = ref<File | null>(null)
 const folderId = ref('')
 const tagsInput = ref('')
-const selectedCategory = ref<DocCategory>('policy')
+const selectedCategory = ref<DocCategory>(props.defaultCategory)
 
 const categories: { value: DocCategory; label: string }[] = [
   { value: 'policy', label: '政策文件' },
