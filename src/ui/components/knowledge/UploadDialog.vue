@@ -13,14 +13,12 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<{
-  upload: [file: File, folderId: string, tags: string[], category: DocCategory]
+  upload: [file: File, category: DocCategory]
   close: []
 }>()
 
 const dragOver = ref(false)
 const file = ref<File | null>(null)
-const folderId = ref('')
-const tagsInput = ref('')
 const selectedCategory = ref<DocCategory>(props.defaultCategory)
 
 const categories: { value: DocCategory; label: string }[] = [
@@ -71,8 +69,7 @@ function validateAndSet(f: File) {
 
 function handleUpload() {
   if (!file.value) return
-  const tags = tagsInput.value.split(',').map(t => t.trim()).filter(Boolean)
-  emit('upload', file.value, folderId.value, tags, selectedCategory.value)
+  emit('upload', file.value, selectedCategory.value)
 }
 
 function formatSize(bytes: number): string {
@@ -124,16 +121,6 @@ function formatSize(bytes: number): string {
             {{ cat.label }}
           </button>
         </div>
-      </div>
-
-      <div class="mb-2">
-        <label class="text-[11px] text-text-light mb-1 block">标签（逗号分隔）</label>
-        <input
-          v-model="tagsInput"
-          type="text"
-          placeholder="如：政策, 2024, 教育"
-          class="w-full bg-page-bg border border-border rounded-md px-2.5 py-1.5 text-[12px] text-text-body outline-none focus:border-accent"
-        />
       </div>
 
       <div class="flex gap-2 justify-end mt-3">
