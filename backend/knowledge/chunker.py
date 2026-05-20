@@ -3,7 +3,7 @@ from typing import List
 from .models import ParsedDocument
 
 
-def chunk_document(parsed: ParsedDocument, max_chunk_size: int = 500, overlap: int = 50) -> List[dict]:
+def chunk_document(parsed: ParsedDocument, max_chunk_size: int = 500, overlap: int = 20) -> List[dict]:
     """
     Chinese document chunking optimized for policy/report documents:
     1. Respect heading/paragraph boundaries from parser

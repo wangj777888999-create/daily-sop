@@ -25,6 +25,7 @@ def _rrf_merge(
     """
     倒数排名融合：两路各自按排名打分，相加后取 top_k。
     chunk 唯一键为 chunk id（doc_id + chunk_index 拼接）。
+    最终对同一文档的相邻 chunk 去重，保留分数更高的一个。
     """
     scores: dict[str, float] = {}
     meta: dict[str, dict] = {}
@@ -48,12 +49,32 @@ def _rrf_merge(
         else:
             meta[key]["vector_rank"] = rank
 
-    # 合并排序
+    # 合并排序（先取 top_k * 2 供去重后再裁剪）
     ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    results = []
-    for key, score in ranked[:top_k]:
+    candidates = []
+    for key, score in ranked[:top_k * 2]:
         item = {**meta[key], "rrf_score": round(score, 6)}
+        candidates.append(item)
+
+    # 相邻 chunk 去重：同一文档内，连续 chunk_index 只保留分数最高的
+    results: List[dict] = []
+    kept: set[str] = set()   # "doc_id_chunkIdx" already kept
+    for item in candidates:
+        doc_id = item.get("doc_id", "")
+        idx = int(item.get("chunk_index", 0))
+        # 如果紧邻的 chunk（±1）已经保留，跳过当前
+        adj_kept = (
+            f"{doc_id}_{idx - 1}" in kept or
+            f"{doc_id}_{idx + 1}" in kept
+        )
+        if adj_kept:
+            continue
+        key = f"{doc_id}_{idx}"
+        kept.add(key)
         results.append(item)
+        if len(results) >= top_k:
+            break
+
     return results
 
 
