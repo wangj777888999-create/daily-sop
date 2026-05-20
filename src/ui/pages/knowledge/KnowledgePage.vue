@@ -29,6 +29,7 @@ const docSearchQuery = ref('')
 const showUpload = ref(false)
 const uploadCategory = ref<DocCategory>('policy')
 const uploading = ref(false)
+const uploadProgress = ref('')
 const uploadError = ref('')
 const previewDocId = ref('')
 const previewDocName = ref('')
@@ -64,16 +65,28 @@ function openUpload() {
   showUpload.value = true
 }
 
-async function handleUpload(file: File, category: DocCategory) {
+async function handleUpload(files: File[], category: DocCategory) {
   uploading.value = true
   uploadError.value = ''
+  uploadProgress.value = ''
+  const errors: string[] = []
   try {
-    await store.uploadDocument(file, undefined, [], category)
-    showUpload.value = false
-  } catch (e: any) {
-    uploadError.value = e?.message || '上传失败，请重试'
+    for (let i = 0; i < files.length; i++) {
+      uploadProgress.value = `${i + 1} / ${files.length}：${files[i].name}`
+      try {
+        await store.uploadDocument(files[i], undefined, [], category)
+      } catch (e: any) {
+        errors.push(`${files[i].name}：${e?.message || '失败'}`)
+      }
+    }
+    if (errors.length === 0) {
+      showUpload.value = false
+    } else {
+      uploadError.value = errors.join('\n')
+    }
   } finally {
     uploading.value = false
+    uploadProgress.value = ''
   }
 }
 
@@ -638,6 +651,7 @@ onMounted(async () => {
     v-if="showUpload"
     :default-category="uploadCategory"
     :uploading="uploading"
+    :upload-progress="uploadProgress"
     :error="uploadError"
     @upload="handleUpload"
     @close="showUpload = false"
