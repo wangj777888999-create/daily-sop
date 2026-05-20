@@ -10,6 +10,8 @@ from api import yolo_training_routes
 from api import settings_routes
 from knowledge.storage import load_all_chunks
 from knowledge.indexer import BM25Index
+from knowledge.embedder import embed
+from knowledge.vector_store import VectorStore
 from settings_storage import load_settings
 
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +35,12 @@ async def lifespan(app: FastAPI):
         index.build(chunks)
     app.state.bm25_index = index
     logging.info(f"BM25 index ready: {index.chunk_count} chunks")
+
+    # 初始化向量存储（ChromaDB，三个 collection）
+    vector_store = VectorStore(embed_fn=embed)
+    app.state.vector_store = vector_store
+    logging.info(f"VectorStore ready: {vector_store.count()} vectors total")
+
     yield
 
 

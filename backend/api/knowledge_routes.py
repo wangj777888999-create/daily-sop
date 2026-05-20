@@ -9,13 +9,14 @@ from typing import List, Optional
 from datetime import datetime
 
 from knowledge.models import (KnowledgeDocument, ParsedDocument, SearchResult,
-                               RAGRequest, RAGResponse, Folder, DocType)
+                               RAGRequest, RAGResponse, Folder, DocType, KBCategory)
 from knowledge.storage import (get_all_docs, get_doc, save_doc, delete_doc,
                                  get_all_folders, save_folder, delete_folder,
                                  get_all_tags, ensure_dirs, save_chunks, delete_doc_chunks)
 from knowledge.parser import parse_document, compute_content_hash
 from knowledge.chunker import chunk_document
 from knowledge.indexer import BM25Index
+from knowledge.vector_store import VectorStore
 from knowledge.rag import RAGPipeline
 
 router = APIRouter()
@@ -37,8 +38,16 @@ def _get_bm25_index() -> BM25Index:
     return index
 
 
+def _get_vector_store() -> VectorStore:
+    from main import app
+    vs = getattr(app.state, "vector_store", None)
+    if vs is None:
+        raise HTTPException(status_code=503, detail="向量存储未就绪，请稍后重试")
+    return vs
+
+
 def _get_rag_pipeline() -> RAGPipeline:
-    return RAGPipeline(_get_bm25_index())
+    return RAGPipeline(_get_bm25_index(), _get_vector_store())
 
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xls", ".txt", ".md"}
@@ -51,6 +60,7 @@ EXT_TO_TYPE = {
 class SearchRequest(PydanticBaseModel):
     query: str
     top_k: int = 10
+    category: Optional[str] = None   # policy / activity / data，None=跨库
     doc_ids: Optional[List[str]] = None
 
 
@@ -58,6 +68,7 @@ class GenerateRequest(PydanticBaseModel):
     prompt: str
     style: str = "policy"
     top_k: int = 5
+    category: Optional[str] = None
     doc_ids: Optional[List[str]] = None
 
 
@@ -88,15 +99,24 @@ def get_document(doc_id: str):
 
 
 @router.post("/knowledge/documents")
-async def upload_document(file: UploadFile = File(...),
-                           folder_id: str = Form(""),
-                           tags: str = Form("")):
+async def upload_document(
+    file: UploadFile = File(...),
+    folder_id: str = Form(""),
+    tags: str = Form(""),
+    category: str = Form("policy"),
+):
     if not file.filename:
         raise HTTPException(status_code=400, detail="文件名不能为空")
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400,
                             detail=f"不支持的文件类型: {ext}。支持: {', '.join(ALLOWED_EXTENSIONS)}")
+
+    # 校验分类
+    try:
+        kb_category = KBCategory(category)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"无效分类: {category}")
 
     contents = await file.read()
     if len(contents) > MAX_FILE_SIZE:
@@ -118,6 +138,7 @@ async def upload_document(file: UploadFile = File(...),
         id=doc_id,
         name=file.filename,
         type=DocType(doc_type),
+        category=kb_category,
         size_bytes=len(contents),
         folder_id=folder_id or None,
         tags=tag_list,
@@ -129,19 +150,25 @@ async def upload_document(file: UploadFile = File(...),
         parsed.doc_id = doc_id
         chunks = chunk_document(parsed)
 
-        # Enrich chunks with doc metadata for BM25
+        # 写入分类和文档元信息
         for c in chunks:
             c["doc_id"] = doc_id
             c["doc_name"] = file.filename
+            c["category"] = kb_category.value
             c["id"] = f"{doc_id}_chunk_{c.get('chunk_index', 0)}"
 
         doc.chunk_count = len(chunks)
         doc.parsed_at = datetime.now()
 
-        # Save chunks to JSON and update BM25 index
+        # BM25 索引
         save_chunks(doc_id, chunks)
         index = _get_bm25_index()
         index.add_chunks(chunks)
+
+        # 向量存储
+        vs = _get_vector_store()
+        vs.add_chunks(kb_category.value, chunks)
+
     except Exception as e:
         logger.error(f"Failed to parse document {doc_id}: {e}")
         raise HTTPException(status_code=500, detail=f"文档解析失败: {str(e)}")
@@ -177,6 +204,10 @@ def delete_document(doc_id: str):
     index = _get_bm25_index()
     index.remove_doc(doc_id)
     delete_doc_chunks(doc_id)
+
+    # Remove from vector store
+    vs = _get_vector_store()
+    vs.remove_doc(doc.category.value, doc_id)
 
     # Remove metadata
     delete_doc(doc_id)
@@ -227,9 +258,14 @@ def download_document(doc_id: str):
 
 @router.post("/knowledge/search")
 def search_knowledge(body: SearchRequest):
-    """BM25 keyword search across the knowledge base."""
+    """混合检索（BM25 + 向量，RRF 融合）"""
     pipeline = _get_rag_pipeline()
-    results = pipeline.retrieve(body.query, top_k=body.top_k, doc_ids=body.doc_ids)
+    results = pipeline.retrieve(
+        body.query,
+        top_k=body.top_k,
+        category=body.category,
+        doc_ids=body.doc_ids,
+    )
     return [r.model_dump(mode="json") for r in results]
 
 
@@ -237,7 +273,13 @@ def search_knowledge(body: SearchRequest):
 
 @router.post("/knowledge/generate")
 def generate_content(body: GenerateRequest):
-    request = RAGRequest(prompt=body.prompt, style=body.style, top_k=body.top_k, doc_ids=body.doc_ids)
+    request = RAGRequest(
+        prompt=body.prompt,
+        style=body.style,
+        top_k=body.top_k,
+        category=body.category,
+        doc_ids=body.doc_ids,
+    )
     pipeline = _get_rag_pipeline()
     response = pipeline.generate(request)
     return response.model_dump(mode="json")

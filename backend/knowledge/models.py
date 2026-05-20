@@ -17,6 +17,12 @@ class DocType(str, Enum):
     MD = "MD"
 
 
+class KBCategory(str, Enum):
+    POLICY = "policy"          # 政策文件
+    ACTIVITY = "activity"      # 活动报告
+    DATA = "data"              # 经营数据报告
+
+
 class Folder(BaseModel):
     id: str = Field(default_factory=_new_id)
     name: str
@@ -37,6 +43,7 @@ class KnowledgeDocument(BaseModel):
     id: str = Field(default_factory=_new_id)
     name: str
     type: DocType
+    category: KBCategory = KBCategory.POLICY
     size_bytes: int
     folder_id: Optional[str] = None
     tags: List[str] = []
@@ -67,6 +74,7 @@ class SearchResult(BaseModel):
 class RAGRequest(BaseModel):
     prompt: str
     doc_ids: Optional[List[str]] = None
+    category: Optional[str] = None   # 限定分类检索，None 表示跨库
     style: str = "policy"
     top_k: int = 5
 

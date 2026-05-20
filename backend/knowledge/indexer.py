@@ -23,8 +23,13 @@ class BM25Index:
         self._index = BM25Okapi(tokenized)
         logger.info(f"BM25 index built: {len(chunks)} chunks")
 
-    def search(self, query: str, top_k: int = 5,
-               doc_ids: Optional[List[str]] = None) -> List[dict]:
+    def search(
+        self,
+        query: str,
+        top_k: int = 5,
+        doc_ids: Optional[List[str]] = None,
+        category: Optional[str] = None,
+    ) -> List[dict]:
         if not self._index or not self._chunks:
             return []
 
@@ -39,6 +44,8 @@ class BM25Index:
             if raw == 0:
                 continue
             if doc_ids and chunk.get("doc_id") not in doc_ids:
+                continue
+            if category and chunk.get("category") != category:
                 continue
             results.append({**chunk, "score": round(raw / max_score, 4)})
 
