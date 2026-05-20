@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime
 from typing import List, Optional
 from .models import KnowledgeDocument, Folder
 
@@ -47,7 +48,7 @@ def get_doc(doc_id: str) -> Optional[KnowledgeDocument]:
 
 
 def save_doc(doc: KnowledgeDocument) -> KnowledgeDocument:
-    doc.updated_at = doc.__class__.model_fields["updated_at"].annotation(default_factory=lambda: None) or __import__("datetime").datetime.now()
+    doc.updated_at = datetime.now()
     docs = get_all_docs()
     for i, existing in enumerate(docs):
         if existing.id == doc.id:
