@@ -227,6 +227,25 @@ def get_document_content(doc_id: str):
     doc = get_doc(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    # 优先从已存储的 chunks 返回（毫秒级，不重新解析文件）
+    from knowledge.storage import load_all_chunks
+    stored = [c for c in load_all_chunks() if c.get("doc_id") == doc_id]
+    if stored:
+        chunks = [
+            {
+                "chunk_type": c.get("chunk_type", "paragraph"),
+                "level": c.get("level", 0),
+                "text": c.get("text", ""),
+                "page": c.get("page", 0),
+                "heading_path": c.get("heading_path", ""),
+            }
+            for c in stored
+        ]
+        full_text = "\n".join(c["text"] for c in chunks)
+        return {"doc_id": doc_id, "full_text": full_text, "chunks": chunks}
+
+    # 兜底：重新解析原始文件（慢，仅当 chunks 未存储时触发）
     doc_dir = os.path.join(KB_FILES_DIR, doc_id)
     if not os.path.exists(doc_dir):
         raise HTTPException(status_code=404, detail="Document files not found")
@@ -234,8 +253,7 @@ def get_document_content(doc_id: str):
     if not files:
         raise HTTPException(status_code=404, detail="Document file not found")
     file_path = os.path.join(doc_dir, files[0])
-    doc_type = doc.type.value
-    parsed = parse_document(file_path, doc_type)
+    parsed = parse_document(file_path, doc.type.value)
     return parsed.model_dump(mode="json")
 
 

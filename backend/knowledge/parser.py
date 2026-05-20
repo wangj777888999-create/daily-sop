@@ -31,11 +31,27 @@ def parse_document(file_path: str, doc_type: str) -> ParsedDocument:
         raise ValueError(f"Unsupported document type: {doc_type}")
 
 
+def _is_pdf_noise(text: str) -> bool:
+    """过滤 PDF 目录页噪声行：点线、页码、纯分隔符等。"""
+    # 连续点/破折号超过行长 30% → 目录行
+    dot_count = text.count('.') + text.count('·') + text.count('…') + text.count('—') + text.count('-')
+    if dot_count > len(text) * 0.3:
+        return True
+    # 纯数字或极短页码行（如 " 21 "）
+    if re.match(r'^\s*\d{1,4}\s*$', text):
+        return True
+    # 全为空白/标点/符号
+    if re.match(r'^[\s\W]+$', text):
+        return True
+    return False
+
+
 def _parse_pdf(path: str) -> ParsedDocument:
     import pdfplumber
 
     chunks = []
     full_lines = []
+    current_heading = ""
 
     with pdfplumber.open(path) as pdf:
         for page_num, page in enumerate(pdf.pages, start=1):
@@ -44,14 +60,18 @@ def _parse_pdf(path: str) -> ParsedDocument:
                 continue
             paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
             for para in paragraphs:
+                if _is_pdf_noise(para):
+                    continue
                 chunk_type = "heading" if _looks_like_heading(para) else "paragraph"
+                if chunk_type == "heading":
+                    current_heading = para
                 full_lines.append(para)
                 chunks.append({
                     "chunk_type": chunk_type,
                     "level": 1 if chunk_type == "heading" else 0,
                     "text": para,
                     "page": page_num,
-                    "heading_path": para if chunk_type == "heading" else "",
+                    "heading_path": current_heading if chunk_type != "heading" else "",
                 })
 
     return ParsedDocument(

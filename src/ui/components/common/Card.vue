@@ -10,7 +10,7 @@ withDefaults(defineProps<Props>(), {
 
 <template>
   <div
-    class="bg-gradient-to-b from-card-bg to-card-gradient border border-border/70 rounded-xl p-4 shadow-card transition-all duration-200"
+    class="bg-card-bg border border-border/70 rounded-xl p-4 shadow-card transition-all duration-200"
     :class="{ 'cursor-pointer hover:shadow-card-hover hover:-translate-y-px': hoverable }"
   >
     <slot />
