@@ -336,9 +336,11 @@ def reparse_document(doc_id: str):
         raise HTTPException(status_code=404, detail="Document file not found")
     file_path = os.path.join(doc_dir, files[0])
 
-    # Remove old chunks from BM25 index
+    # Remove old chunks from BM25 + vector store
     index = _get_bm25_index()
     index.remove_doc(doc_id)
+    vs = _get_vector_store()
+    vs.remove_doc(doc.category.value, doc_id)
     delete_doc_chunks(doc_id)
 
     # Re-parse
@@ -350,14 +352,19 @@ def reparse_document(doc_id: str):
     for c in chunks:
         c["doc_id"] = doc_id
         c["doc_name"] = doc.name
+        c["category"] = doc.category.value
         c["id"] = f"{doc_id}_chunk_{c.get('chunk_index', 0)}"
+
+    # Filter empty-text chunks
+    chunks = [c for c in chunks if c.get("text", "").strip()]
 
     doc.chunk_count = len(chunks)
     doc.parsed_at = datetime.now()
 
-    # Save and update index
+    # Save and update BM25 + vector index
     save_chunks(doc_id, chunks)
     index.add_chunks(chunks)
+    vs.add_chunks(doc.category.value, chunks)
     save_doc(doc)
 
     return {"message": f"Reparsed {len(chunks)} chunks", "chunk_count": len(chunks)}
