@@ -6,10 +6,14 @@ import type { DocCategory } from '@/types/knowledge'
 
 interface Props {
   defaultCategory?: DocCategory
+  uploading?: boolean
+  error?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   defaultCategory: 'policy',
+  uploading: false,
+  error: '',
 })
 
 const emit = defineEmits<{
@@ -123,9 +127,21 @@ function formatSize(bytes: number): string {
         </div>
       </div>
 
+      <!-- Error -->
+      <div v-if="props.error" class="mt-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-[12px] text-red-600">
+        {{ props.error }}
+      </div>
+
+      <!-- Loading hint -->
+      <div v-if="props.uploading" class="mt-2 px-3 py-2 bg-accent-light border border-accent/20 rounded-lg text-[12px] text-accent">
+        ⏳ 正在解析并建立索引，首次上传需加载语言模型，约需 20-60 秒…
+      </div>
+
       <div class="flex gap-2 justify-end mt-3">
-        <Button variant="secondary" size="small" @click="emit('close')">取消</Button>
-        <Button variant="primary" size="small" @click="handleUpload" :disabled="!file">上传</Button>
+        <Button variant="secondary" size="small" @click="emit('close')" :disabled="props.uploading">取消</Button>
+        <Button variant="primary" size="small" @click="handleUpload" :disabled="!file || props.uploading">
+          {{ props.uploading ? '上传中...' : '上传' }}
+        </Button>
       </div>
     </Card>
   </div>

@@ -28,6 +28,8 @@ const tabs: { id: TabId; label: string }[] = [
 const docSearchQuery = ref('')
 const showUpload = ref(false)
 const uploadCategory = ref<DocCategory>('policy')
+const uploading = ref(false)
+const uploadError = ref('')
 const previewDocId = ref('')
 const previewDocName = ref('')
 
@@ -58,12 +60,21 @@ const currentDocs = computed(() => {
 function openUpload() {
   const cat = currentDocCategory()
   uploadCategory.value = cat ?? 'policy'
+  uploadError.value = ''
   showUpload.value = true
 }
 
-function handleUpload(file: File, category: DocCategory) {
-  store.uploadDocument(file, undefined, [], category)
-  showUpload.value = false
+async function handleUpload(file: File, category: DocCategory) {
+  uploading.value = true
+  uploadError.value = ''
+  try {
+    await store.uploadDocument(file, undefined, [], category)
+    showUpload.value = false
+  } catch (e: any) {
+    uploadError.value = e?.message || '上传失败，请重试'
+  } finally {
+    uploading.value = false
+  }
 }
 
 function handlePreview(docId: string) {
@@ -588,6 +599,8 @@ onMounted(async () => {
   <UploadDialog
     v-if="showUpload"
     :default-category="uploadCategory"
+    :uploading="uploading"
+    :error="uploadError"
     @upload="handleUpload"
     @close="showUpload = false"
   />
