@@ -38,13 +38,35 @@ interface KBReport {
 
 const monthlyReports = ref<KBReport[]>([])
 
+const CN_MONTH_MAP: Record<number, string[]> = {
+  1: ['1月', '01月', '一月'], 2: ['2月', '02月', '二月'],
+  3: ['3月', '03月', '三月'], 4: ['4月', '04月', '四月'],
+  5: ['5月', '05月', '五月'], 6: ['6月', '06月', '六月'],
+  7: ['7月', '07月', '七月'], 8: ['8月', '08月', '八月'],
+  9: ['9月', '09月', '九月'], 10: ['10月', '十月'],
+  11: ['11月', '十一月'], 12: ['12月', '十二月'],
+}
+
+function docMatchesYearMonth(name: string, y: number, m: number): boolean {
+  const yearStr = String(y)
+  if (!name.includes(yearStr)) return false
+  const monthVariants = CN_MONTH_MAP[m] ?? []
+  // YYYYMM 格式
+  const mmStr = String(m).padStart(2, '0')
+  return monthVariants.some(v => name.includes(v)) ||
+    name.includes(`${yearStr}${mmStr}`) ||
+    name.includes(`${yearStr}-${mmStr}`) ||
+    name.includes(`${yearStr}_${mmStr}`)
+}
+
 async function loadMonthlyReports() {
   try {
     const res = await fetch('/api/knowledge/documents')
     if (!res.ok) return
-    const docs: KBReport[] = await res.json()
-    const prefix = `${year.value}年${month.value}月`
-    monthlyReports.value = docs.filter((d: any) => d.category === 'data' && d.name.includes(prefix))
+    const docs = await res.json()
+    monthlyReports.value = docs.filter((d: any) =>
+      d.category === 'data' && docMatchesYearMonth(d.name, year.value, month.value)
+    )
   } catch {
     monthlyReports.value = []
   }

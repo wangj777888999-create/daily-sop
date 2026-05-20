@@ -103,6 +103,46 @@ interface MonthGroup {
   docs: typeof store.documents
 }
 
+const CN_MONTH: Record<string, number> = {
+  '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6,
+  '七': 7, '八': 8, '九': 9, '十': 10, '十一': 11, '十二': 12,
+}
+
+/**
+ * 从文件名中解析年月，支持多种格式：
+ *   2025年4月   2025年10月   2025-04   2025_04   202504
+ *   2025十月    2025十一月   2025四月
+ */
+function parseYearMonth(name: string): { year: number; month: number } | null {
+  // 1. YYYY年M月 / YYYY年MM月
+  let m = name.match(/(\d{4})年(\d{1,2})月/)
+  if (m) return { year: +m[1], month: +m[2] }
+
+  // 2. YYYY年（中文月份）月  e.g. 2025年十月 / 2025年十一月
+  m = name.match(/(\d{4})年(十[一二]?|[一二三四五六七八九])月?/)
+  if (m) {
+    const month = CN_MONTH[m[2]]
+    if (month) return { year: +m[1], month }
+  }
+
+  // 3. YYYY（中文月份）  e.g. 2025十月 / 2025四月
+  m = name.match(/(\d{4})(十[一二]?|[一二三四五六七八九])月?/)
+  if (m) {
+    const month = CN_MONTH[m[2]]
+    if (month) return { year: +m[1], month }
+  }
+
+  // 4. YYYYMM  e.g. 202504 / 202510  （6位纯数字，月份01-12）
+  m = name.match(/(\d{4})(0[1-9]|1[0-2])(?!\d)/)
+  if (m) return { year: +m[1], month: +m[2] }
+
+  // 5. YYYY-MM / YYYY_MM / YYYY.MM
+  m = name.match(/(\d{4})[-_.\/](\d{1,2})(?![-_.\/\d])/)
+  if (m && +m[2] >= 1 && +m[2] <= 12) return { year: +m[1], month: +m[2] }
+
+  return null
+}
+
 function detectReportType(name: string): { label: string; color: string } {
   if (name.includes('校内')) return { label: '校内月报', color: 'orange' }
   if (name.includes('校外')) return { label: '校外月报', color: 'blue' }
@@ -116,10 +156,9 @@ const dataGroupedByMonth = computed((): MonthGroup[] => {
   const ungrouped: typeof store.documents = []
 
   for (const doc of dataDocs) {
-    const m = doc.name.match(/(\d{4})年(\d{1,2})月/)
-    if (m) {
-      const year = parseInt(m[1])
-      const month = parseInt(m[2])
+    const parsed = parseYearMonth(doc.name)
+    if (parsed) {
+      const { year, month } = parsed
       const key = `${year}-${String(month).padStart(2, '0')}`
       if (!groups[key]) groups[key] = { key, year, month, docs: [] }
       groups[key].docs.push(doc)
@@ -129,7 +168,6 @@ const dataGroupedByMonth = computed((): MonthGroup[] => {
   }
 
   const sorted = Object.values(groups).sort((a, b) => b.key.localeCompare(a.key))
-  // 无法解析年月的文档放在最后一组
   if (ungrouped.length) sorted.push({ key: 'other', year: 0, month: 0, docs: ungrouped })
   return sorted
 })
