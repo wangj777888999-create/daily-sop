@@ -108,9 +108,11 @@ def import_checkin(excel_bytes: bytes, check_date: str = None) -> dict:
                 if pd.isna(val):
                     continue
                 if en in ("actual_count", "expected_count"):
-                    record[en] = int(float(val))
+                    v = pd.to_numeric(val, errors='coerce')
+                    record[en] = 0 if pd.isna(v) else int(v)
                 elif en == "confirmed_revenue":
-                    record[en] = float(val)
+                    v = pd.to_numeric(val, errors='coerce')
+                    record[en] = 0.0 if pd.isna(v) else float(v)
                 else:
                     record[en] = str(val)
 

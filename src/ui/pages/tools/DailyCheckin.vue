@@ -28,8 +28,9 @@ interface CheckinRecord {
 const step = ref<Step>('upload')
 const coachFile = ref<File | null>(null)
 const financeFile = ref<File | null>(null)
-const importFile = ref<File | null>(null)
+const importFiles = ref<File[]>([])
 const importMode = ref(false)
+const importResults = ref<{ filename: string; status: 'pending' | 'importing' | 'ok' | 'error'; msg: string; count?: number; date?: string }[]>([])
 const checkDate = ref(new Date().toISOString().slice(0, 10))
 const loading = ref(false)
 const errorMsg = ref('')
@@ -78,14 +79,21 @@ const statusSummary = computed(() => {
 
 function onFileSelect(event: Event, type: 'coach' | 'finance' | 'import') {
   const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  if (type === 'coach') coachFile.value = file
-  else if (type === 'finance') financeFile.value = file
-  else importFile.value = file
+  if (type === 'coach') { const f = input.files?.[0]; if (f) coachFile.value = f }
+  else if (type === 'finance') { const f = input.files?.[0]; if (f) financeFile.value = f }
+  else if (input.files) {
+    importFiles.value = Array.from(input.files)
+    importResults.value = importFiles.value.map(f => ({ filename: f.name, status: 'pending', msg: '' }))
+  }
 }
 
-const canImport = computed(() => importFile.value)
+const canImport = computed(() => importFiles.value.length > 0 && !loading.value && !importDone.value)
+const importDone = computed(() => importResults.value.length > 0 && importResults.value.every(r => r.status === 'ok' || r.status === 'error'))
+const importSummary = computed(() => ({
+  ok: importResults.value.filter(r => r.status === 'ok').length,
+  error: importResults.value.filter(r => r.status === 'error').length,
+  total: importResults.value.reduce((s, r) => s + (r.count ?? 0), 0),
+}))
 
 const canPreview = computed(() => coachFile.value && financeFile.value)
 
@@ -136,26 +144,34 @@ async function doProcess() {
 }
 
 async function doImport() {
-  if (!importFile.value) return
+  if (!importFiles.value.length) return
   loading.value = true
   errorMsg.value = ''
-  try {
-    const fd = new FormData()
-    fd.append('file', importFile.value)
-    fd.append('check_date', checkDate.value)
-    const res = await fetch(`${API}/import`, { method: 'POST', body: fd })
-    if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.detail || '导入失败')
+  for (let i = 0; i < importFiles.value.length; i++) {
+    importResults.value[i].status = 'importing'
+    try {
+      const fd = new FormData()
+      fd.append('file', importFiles.value[i])
+      fd.append('check_date', checkDate.value)
+      const res = await fetch(`${API}/import`, { method: 'POST', body: fd })
+      if (!res.ok) {
+        const text = await res.text()
+        let msg = '导入失败'
+        try { msg = JSON.parse(text).detail || msg } catch { msg = text || msg }
+        throw new Error(msg)
+      }
+      const data = await res.json()
+      importResults.value[i].status = 'ok'
+      importResults.value[i].count = data.record_count
+      importResults.value[i].date = data.check_date
+      importResults.value[i].msg = `${data.record_count} 条 · ${data.check_date}`
+    } catch (e: any) {
+      importResults.value[i].status = 'error'
+      importResults.value[i].msg = e.message || '导入失败'
     }
-    processResult.value = await res.json()
-    step.value = 'result'
-    loadHistory()
-  } catch (e: any) {
-    errorMsg.value = e.message
-  } finally {
-    loading.value = false
   }
+  loading.value = false
+  loadHistory()
 }
 
 function downloadResult() {
@@ -316,11 +332,17 @@ async function undoDelete() {
   }
 }
 
+function resetImport() {
+  importFiles.value = []
+  importResults.value = []
+}
+
 function reset() {
   step.value = 'upload'
   coachFile.value = null
   financeFile.value = null
-  importFile.value = null
+  importFiles.value = []
+  importResults.value = []
   importMode.value = false
   preview.value = null
   processResult.value = null
@@ -432,20 +454,81 @@ loadHistory()
 
           <!-- Direct import mode -->
           <div v-if="importMode" class="flex flex-col gap-4">
-            <label class="border border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-accent transition-colors">
-              <input type="file" accept=".xlsx,.xls" class="hidden" @change="onFileSelect($event, 'import')" />
-              <div v-if="!importFile">
-                <p class="text-sm font-medium text-text-heading">已格式化的签到数据文件</p>
-                <p class="text-xs text-text-light mt-1">选择已经处理好的 Excel 文件直接导入</p>
+
+            <!-- ① 完成结果面板 -->
+            <div v-if="importDone" class="flex flex-col gap-3">
+              <!-- 汇总 -->
+              <div class="rounded-xl px-4 py-3 flex items-center gap-4"
+                :style="importSummary.error ? 'background:#fef9f0; border:1px solid #fde68a;' : 'background:#f0fdf4; border:1px solid #bbf7d0;'">
+                <div class="flex-1">
+                  <p class="text-sm font-semibold" :style="importSummary.error ? 'color:#92400e;' : 'color:#166534;'">
+                    {{ importSummary.error === 0 ? '全部导入成功' : `${importSummary.ok} 成功 · ${importSummary.error} 失败` }}
+                  </p>
+                  <p class="text-xs mt-0.5" style="color:#6B5F52;">
+                    共写入 {{ importSummary.total }} 条记录
+                  </p>
+                </div>
+                <button class="text-xs font-medium underline" style="color:#6B5F52;" @click="resetImport">
+                  继续导入
+                </button>
               </div>
-              <div v-else>
-                <p class="text-sm font-medium text-green-600">✓ {{ importFile.name }}</p>
-                <p class="text-xs text-text-light mt-1">{{ (importFile.size / 1024).toFixed(1) }} KB</p>
+
+              <!-- 明细表 -->
+              <div class="rounded-xl border overflow-hidden" style="border-color:#e8e4e0;">
+                <div class="grid text-xs font-semibold px-3 py-2"
+                  style="grid-template-columns: 1fr 110px 80px 70px; background:#f5f2ef; color:#6B5F52; border-bottom:1px solid #e8e4e0;">
+                  <span>文件名</span>
+                  <span>批次日期</span>
+                  <span class="text-center">写入记录</span>
+                  <span class="text-center">状态</span>
+                </div>
+                <div v-for="(r, i) in importResults" :key="i"
+                  class="grid items-center px-3 py-2 text-xs border-b last:border-0"
+                  style="grid-template-columns: 1fr 110px 80px 70px; border-color:#f0ece8;">
+                  <span class="truncate pr-2" style="color:#3D3530;" :title="r.filename">{{ r.filename }}</span>
+                  <span style="color:#6B5F52;">{{ r.date || '—' }}</span>
+                  <span class="text-center" style="color:#6B5F52;">{{ r.count ?? '—' }}</span>
+                  <span class="text-center font-medium"
+                    :style="r.status === 'ok' ? 'color:#166534;' : 'color:#991b1b;'">
+                    {{ r.status === 'ok' ? '✓ 成功' : '✕ 失败' }}
+                  </span>
+                </div>
               </div>
-            </label>
-            <Button variant="primary" :disabled="!canImport" :loading="loading" @click="doImport">
-              直接导入
-            </Button>
+
+              <!-- 失败详情 -->
+              <div v-if="importSummary.error" class="flex flex-col gap-1">
+                <p class="text-xs font-medium" style="color:#92400e;">失败原因：</p>
+                <div v-for="(r, i) in importResults.filter(r => r.status === 'error')" :key="i"
+                  class="text-xs rounded px-3 py-2" style="background:#fef2f2; color:#991b1b;">
+                  {{ r.filename }}：{{ r.msg }}
+                </div>
+              </div>
+            </div>
+
+            <!-- ② 选文件 + 进行中 -->
+            <template v-else>
+              <label class="border border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-accent transition-colors"
+                :class="{ 'pointer-events-none opacity-60': loading }">
+                <input type="file" accept=".xlsx,.xls" multiple class="hidden" @change="onFileSelect($event, 'import')" />
+                <div v-if="!importFiles.length">
+                  <p class="text-sm font-medium text-text-heading">已格式化的签到数据文件</p>
+                  <p class="text-xs text-text-light mt-1">支持多选，日期自动从「课程日期」列读取</p>
+                </div>
+                <div v-else class="flex flex-col gap-1.5 text-left">
+                  <p class="text-xs font-medium mb-1" style="color:#6B5F52;">已选择 {{ importFiles.length }} 个文件</p>
+                  <div v-for="(f, i) in importFiles" :key="i"
+                    class="flex items-center justify-between text-xs rounded px-2 py-1.5"
+                    style="background:#f5f2ef;">
+                    <span class="truncate max-w-[260px]" :title="f.name">{{ f.name }}</span>
+                    <span v-if="importResults[i]?.status === 'pending'" style="color:#9C8E82;">待导入</span>
+                    <span v-else-if="importResults[i]?.status === 'importing'" style="color:#6B8F71;">导入中…</span>
+                  </div>
+                </div>
+              </label>
+              <Button variant="primary" :disabled="!canImport" :loading="loading" @click="doImport">
+                {{ importFiles.length > 1 ? `批量导入（${importFiles.length} 个文件）` : '直接导入' }}
+              </Button>
+            </template>
           </div>
 
           <!-- Normal upload buttons -->

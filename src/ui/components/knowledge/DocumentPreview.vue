@@ -34,7 +34,7 @@ async function loadContent() {
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-black/20 flex items-center justify-center z-50" @click.self="emit('close')">
+  <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50" @click.self="emit('close')">
     <Card class="w-[680px] max-h-[80vh] flex flex-col">
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-[15px] font-bold text-text-heading truncate flex-1">{{ docName }}</h3>

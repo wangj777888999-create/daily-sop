@@ -170,27 +170,30 @@ def save_checkin_records(records: List[Dict[str, Any]], batch_info: Dict[str, An
     conn = _get_conn()
     cur = conn.cursor()
 
+    # Full replace: delete existing records for all dates covered by this upload,
+    # then delete old batch entries for those same dates.
+    dates_to_replace = set(r["check_date"] for r in records if r.get("check_date"))
+    for d in dates_to_replace:
+        cur.execute("DELETE FROM daily_checkin WHERE check_date = ?", (d,))
+        cur.execute("DELETE FROM checkin_batches WHERE batch_date = ?", (d,))
+
     inserted = 0
     for r in records:
-        try:
-            cur.execute("""
-                INSERT OR IGNORE INTO daily_checkin
-                (check_date, department, school_name, course_type, course_name,
-                 coach_name, course_date, start_time, end_time,
-                 sign_in_time, sign_out_time, sign_status,
-                 actual_count, expected_count, confirmed_revenue)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                r.get("check_date"), r.get("department"), r.get("school_name"),
-                r.get("course_type"), r.get("course_name"), r.get("coach_name"),
-                r.get("course_date"), r.get("start_time"), r.get("end_time"),
-                r.get("sign_in_time"), r.get("sign_out_time"), r.get("sign_status"),
-                r.get("actual_count", 0), r.get("expected_count", 0), r.get("confirmed_revenue", 0),
-            ))
-            if cur.rowcount > 0:
-                inserted += 1
-        except sqlite3.IntegrityError:
-            pass
+        cur.execute("""
+            INSERT OR IGNORE INTO daily_checkin
+            (check_date, department, school_name, course_type, course_name,
+             coach_name, course_date, start_time, end_time,
+             sign_in_time, sign_out_time, sign_status,
+             actual_count, expected_count, confirmed_revenue)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            r.get("check_date"), r.get("department"), r.get("school_name"),
+            r.get("course_type"), r.get("course_name"), r.get("coach_name"),
+            r.get("course_date"), r.get("start_time"), r.get("end_time"),
+            r.get("sign_in_time"), r.get("sign_out_time"), r.get("sign_status"),
+            r.get("actual_count", 0), r.get("expected_count", 0), r.get("confirmed_revenue", 0),
+        ))
+        inserted += 1
 
     cur.execute("""
         INSERT INTO checkin_batches (batch_date, coach_file, finance_file, output_filename, record_count, status)
