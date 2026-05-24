@@ -30,7 +30,6 @@ const selectedCategory = ref<DocCategory>(props.defaultCategory)
 const categories: { value: DocCategory; label: string }[] = [
   { value: 'policy', label: '政策文件' },
   { value: 'activity', label: '活动报告' },
-  { value: 'data', label: '经营数据报告' },
 ]
 
 const allowedTypes = ['.pdf', '.docx', '.xlsx', '.xls', '.txt', '.md']

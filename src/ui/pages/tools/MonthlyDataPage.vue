@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import Card from '@/ui/components/common/Card.vue'
-
-const router = useRouter()
 
 interface FileStatus {
   uploaded: boolean
@@ -27,61 +24,6 @@ const month = ref(new Date().getMonth() === 0 ? 12 : new Date().getMonth())
 const status = ref<MonthlyStatus | null>(null)
 const uploading = ref<Record<string, boolean>>({})
 const errorMsg = ref('')
-
-// ── 知识库分析报告联动 ────────────────────────────────────────────────────
-interface KBReport {
-  id: string
-  name: string
-  chunk_count: number
-  created_at: string
-}
-
-const monthlyReports = ref<KBReport[]>([])
-
-const CN_MONTH_MAP: Record<number, string[]> = {
-  1: ['1月', '01月', '一月'], 2: ['2月', '02月', '二月'],
-  3: ['3月', '03月', '三月'], 4: ['4月', '04月', '四月'],
-  5: ['5月', '05月', '五月'], 6: ['6月', '06月', '六月'],
-  7: ['7月', '07月', '七月'], 8: ['8月', '08月', '八月'],
-  9: ['9月', '09月', '九月'], 10: ['10月', '十月'],
-  11: ['11月', '十一月'], 12: ['12月', '十二月'],
-}
-
-function docMatchesYearMonth(name: string, y: number, m: number): boolean {
-  const yearStr = String(y)
-  if (!name.includes(yearStr)) return false
-  const monthVariants = CN_MONTH_MAP[m] ?? []
-  // YYYYMM 格式
-  const mmStr = String(m).padStart(2, '0')
-  return monthVariants.some(v => name.includes(v)) ||
-    name.includes(`${yearStr}${mmStr}`) ||
-    name.includes(`${yearStr}-${mmStr}`) ||
-    name.includes(`${yearStr}_${mmStr}`)
-}
-
-async function loadMonthlyReports() {
-  try {
-    const res = await fetch('/api/knowledge/documents')
-    if (!res.ok) return
-    const docs = await res.json()
-    monthlyReports.value = docs.filter((d: any) =>
-      d.category === 'data' && docMatchesYearMonth(d.name, year.value, month.value)
-    )
-  } catch {
-    monthlyReports.value = []
-  }
-}
-
-function detectReportType(name: string) {
-  if (name.includes('校内')) return { label: '校内月报', emoji: '🏫' }
-  if (name.includes('校外')) return { label: '校外月报', emoji: '🏃' }
-  if (name.includes('折扣率')) return { label: '折扣率', emoji: '💰' }
-  return { label: '报告', emoji: '📊' }
-}
-
-function goToKBQA() {
-  router.push('/knowledge')
-}
 
 const FILE_DEFS = [
   { key: 'skjl',         accept: '.xlsx,.xls', required: true,  badge: '共用' },
@@ -108,7 +50,6 @@ async function loadStatus() {
   } catch (e: any) {
     errorMsg.value = '加载状态失败：' + e.message
   }
-  loadMonthlyReports()
 }
 
 async function handleUpload(event: Event, key: string) {
@@ -265,40 +206,6 @@ onMounted(loadStatus)
         </div>
 
         <div v-else class="text-center py-8 text-sm text-text-light">加载中...</div>
-
-        <!-- 分析报告联动区 -->
-        <div class="border border-border rounded-xl p-4">
-          <div class="flex items-center justify-between mb-3">
-            <p class="text-sm font-medium text-text-heading">
-              📊 {{ year }}年{{ month }}月 分析报告
-            </p>
-            <button
-              v-if="monthlyReports.length > 0"
-              class="text-[12px] text-accent hover:underline"
-              @click="goToKBQA"
-            >
-              去知识库问答 →
-            </button>
-          </div>
-
-          <div v-if="monthlyReports.length === 0" class="text-xs text-text-light py-2">
-            本月暂无分析报告。运行校内/校外月报或折扣率分析后自动归档到知识库。
-          </div>
-
-          <div v-else class="flex flex-wrap gap-2">
-            <div
-              v-for="report in monthlyReports"
-              :key="report.id"
-              class="flex items-center gap-2 px-3 py-2 bg-accent-light border border-accent/20 rounded-lg"
-            >
-              <span class="text-base">{{ detectReportType(report.name).emoji }}</span>
-              <div>
-                <p class="text-xs font-medium text-text-heading">{{ detectReportType(report.name).label }}</p>
-                <p class="text-[10px] text-text-light">{{ report.chunk_count }} 个文本块</p>
-              </div>
-            </div>
-          </div>
-        </div>
 
         <!-- Usage guide -->
         <div class="bg-page-bg rounded-xl p-4 text-sm">

@@ -13,13 +13,12 @@ import type { DocCategory, RAGResponse } from '@/types/knowledge'
 const store = useKnowledgeStore()
 
 // Tab management
-type TabId = 'policy' | 'activity' | 'data' | 'qa' | 'write'
+type TabId = 'policy' | 'activity' | 'qa' | 'write'
 const activeTab = ref<TabId>('policy')
 
 const tabs: { id: TabId; label: string }[] = [
   { id: 'policy', label: '政策文件' },
   { id: 'activity', label: '活动报告' },
-  { id: 'data', label: '经营数据报告' },
   { id: 'qa', label: '智能问答' },
   { id: 'write', label: '辅助撰写' },
 ]
@@ -38,12 +37,10 @@ const previewDocName = ref('')
 const tabToCategory: Record<string, DocCategory> = {
   policy: 'policy',
   activity: 'activity',
-  data: 'data',
 }
-const categoryLabels: Record<DocCategory, string> = {
+const categoryLabels: Record<string, string> = {
   policy: '政策文件',
   activity: '活动报告',
-  data: '经营数据报告',
 }
 
 function currentDocCategory(): DocCategory | null {
@@ -108,83 +105,6 @@ function handleDelete(docId: string) {
   }
 }
 
-// ── 经营数据归档视图 ────────────────────────────────────────────────────────
-interface MonthGroup {
-  key: string   // "2025-04"
-  year: number
-  month: number
-  docs: typeof store.documents
-}
-
-const CN_MONTH: Record<string, number> = {
-  '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6,
-  '七': 7, '八': 8, '九': 9, '十': 10, '十一': 11, '十二': 12,
-}
-
-/**
- * 从文件名中解析年月，支持多种格式：
- *   2025年4月   2025年10月   2025-04   2025_04   202504
- *   2025十月    2025十一月   2025四月
- */
-function parseYearMonth(name: string): { year: number; month: number } | null {
-  // 1. YYYY年M月 / YYYY年MM月
-  let m = name.match(/(\d{4})年(\d{1,2})月/)
-  if (m) return { year: +m[1], month: +m[2] }
-
-  // 2. YYYY年（中文月份）月  e.g. 2025年十月 / 2025年十一月
-  m = name.match(/(\d{4})年(十[一二]?|[一二三四五六七八九])月?/)
-  if (m) {
-    const month = CN_MONTH[m[2]]
-    if (month) return { year: +m[1], month }
-  }
-
-  // 3. YYYY（中文月份）  e.g. 2025十月 / 2025四月
-  m = name.match(/(\d{4})(十[一二]?|[一二三四五六七八九])月?/)
-  if (m) {
-    const month = CN_MONTH[m[2]]
-    if (month) return { year: +m[1], month }
-  }
-
-  // 4. YYYYMM  e.g. 202504 / 202510  （6位纯数字，月份01-12）
-  m = name.match(/(\d{4})(0[1-9]|1[0-2])(?!\d)/)
-  if (m) return { year: +m[1], month: +m[2] }
-
-  // 5. YYYY-MM / YYYY_MM / YYYY.MM
-  m = name.match(/(\d{4})[-_.\/](\d{1,2})(?![-_.\/\d])/)
-  if (m && +m[2] >= 1 && +m[2] <= 12) return { year: +m[1], month: +m[2] }
-
-  return null
-}
-
-function detectReportType(name: string): { label: string; color: string } {
-  if (name.includes('校内')) return { label: '校内月报', color: 'orange' }
-  if (name.includes('校外')) return { label: '校外月报', color: 'blue' }
-  if (name.includes('折扣率')) return { label: '折扣率', color: 'purple' }
-  return { label: '报告', color: 'gray' }
-}
-
-const dataGroupedByMonth = computed((): MonthGroup[] => {
-  const dataDocs = store.documentsByCategory('data')
-  const groups: Record<string, MonthGroup> = {}
-  const ungrouped: typeof store.documents = []
-
-  for (const doc of dataDocs) {
-    const parsed = parseYearMonth(doc.name)
-    if (parsed) {
-      const { year, month } = parsed
-      const key = `${year}-${String(month).padStart(2, '0')}`
-      if (!groups[key]) groups[key] = { key, year, month, docs: [] }
-      groups[key].docs.push(doc)
-    } else {
-      ungrouped.push(doc)
-    }
-  }
-
-  const sorted = Object.values(groups).sort((a, b) => b.key.localeCompare(a.key))
-  if (ungrouped.length) sorted.push({ key: 'other', year: 0, month: 0, docs: ungrouped })
-  return sorted
-})
-
 // Q&A tab
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -194,32 +114,15 @@ interface ChatMessage {
 }
 
 const qaCategory = ref<DocCategory | ''>('')
-const qaDocIds = ref<string[]>([])   // 空=不限，非空=限定到这批文档
-const qaMonthLabel = ref('')          // 显示用："2025年4月"
 const qaInput = ref('')
 const qaLoading = ref(false)
 const qaMessages = ref<ChatMessage[]>([])
 const qaError = ref('')
 
-function enterMonthQA(group: MonthGroup) {
-  qaDocIds.value = group.docs.map(d => d.id)
-  qaMonthLabel.value = group.year ? `${group.year}年${group.month}月` : '其他报告'
-  qaCategory.value = 'data'
-  qaMessages.value = []
-  qaError.value = ''
-  activeTab.value = 'qa'
-}
-
-function clearQAScope() {
-  qaDocIds.value = []
-  qaMonthLabel.value = ''
-}
-
 const qaCategoryOptions: { value: DocCategory | ''; label: string }[] = [
   { value: '', label: '全部' },
   { value: 'policy', label: '政策文件' },
   { value: 'activity', label: '活动报告' },
-  { value: 'data', label: '经营数据报告' },
 ]
 
 async function sendQA() {
@@ -235,7 +138,6 @@ async function sendQA() {
       style: 'general',
       top_k: 5,
       category: qaCategory.value || undefined,
-      doc_ids: qaDocIds.value.length > 0 ? qaDocIds.value : undefined,
     })
     qaMessages.value.push({
       role: 'assistant',
@@ -353,89 +255,9 @@ onMounted(async () => {
       </div>
     </template>
 
-    <!-- 经营数据 tab — 按年月归档 -->
-    <template v-if="activeTab === 'data'">
-      <div class="flex items-center gap-2 mb-4">
-        <span class="text-[13px] text-text-light flex-1">分析报告按月归档，生成后自动入库</span>
-        <Button variant="primary" icon="📤" @click="openUpload">手动上传</Button>
-      </div>
-
-      <!-- Loading -->
-      <div v-if="store.loading" class="flex flex-col gap-3">
-        <div v-for="i in 3" :key="i" class="h-16 rounded-xl bg-placeholder animate-pulse" />
-      </div>
-
-      <!-- Empty -->
-      <div v-else-if="dataGroupedByMonth.length === 0" class="flex-1 flex items-center justify-center">
-        <div class="text-center">
-          <div class="text-[36px] mb-2">📊</div>
-          <p class="text-[13px] text-text-body mb-1">暂无经营数据报告</p>
-          <p class="text-[11px] text-text-light">运行校内/校外月报分析后自动归档，或手动上传</p>
-        </div>
-      </div>
-
-      <!-- Archive list -->
-      <div v-else class="flex flex-col gap-2 overflow-y-auto">
-        <div
-          v-for="group in dataGroupedByMonth"
-          :key="group.key"
-          class="border border-border rounded-xl px-4 py-3 flex items-center gap-3 hover:border-accent/40 transition-colors"
-        >
-          <!-- Month label -->
-          <div class="w-20 shrink-0">
-            <template v-if="group.year">
-              <p class="text-[13px] font-bold text-text-heading">{{ group.month }}月</p>
-              <p class="text-[11px] text-text-light">{{ group.year }}年</p>
-            </template>
-            <p v-else class="text-[12px] text-text-light">其他</p>
-          </div>
-
-          <!-- Report badges -->
-          <div class="flex flex-wrap gap-1.5 flex-1">
-            <div
-              v-for="doc in group.docs"
-              :key="doc.id"
-              class="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border"
-              :class="{
-                'bg-orange-50 text-orange-600 border-orange-200': detectReportType(doc.name).color === 'orange',
-                'bg-blue-50 text-blue-600 border-blue-200': detectReportType(doc.name).color === 'blue',
-                'bg-purple-50 text-purple-600 border-purple-200': detectReportType(doc.name).color === 'purple',
-                'bg-gray-50 text-gray-600 border-gray-200': detectReportType(doc.name).color === 'gray',
-              }"
-            >
-              ✓ {{ detectReportType(doc.name).label }}
-            </div>
-          </div>
-
-          <!-- Actions -->
-          <div class="flex items-center gap-2 shrink-0">
-            <span class="text-[11px] text-text-light">{{ group.docs.length }} 份</span>
-            <button
-              class="px-3 py-1 text-[12px] rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors font-medium"
-              @click="enterMonthQA(group)"
-            >
-              本月问答 →
-            </button>
-            <button
-              class="text-[11px] text-text-light hover:text-red-500 transition-colors"
-              @click="group.docs.forEach(d => handleDelete(d.id))"
-            >
-              删除
-            </button>
-          </div>
-        </div>
-      </div>
-    </template>
-
     <!-- Q&A tab -->
     <template v-if="activeTab === 'qa'">
       <div class="flex flex-col h-full min-h-0">
-        <!-- 月份范围提示条 -->
-        <div v-if="qaDocIds.length > 0" class="flex items-center gap-2 mb-2 px-3 py-2 bg-accent-light border border-accent/30 rounded-lg">
-          <span class="text-[12px] text-accent font-medium">📊 {{ qaMonthLabel }} 报告（{{ qaDocIds.length }} 份）</span>
-          <button class="ml-auto text-[11px] text-text-light hover:text-accent" @click="clearQAScope">✕ 清除范围</button>
-        </div>
-
         <!-- Category selector -->
         <div class="flex items-center gap-2 mb-3">
           <span class="text-[12px] text-text-light">检索范围：</span>
@@ -446,7 +268,7 @@ onMounted(async () => {
             :class="qaCategory === opt.value
               ? 'border-accent bg-accent-light text-accent font-medium'
               : 'border-border text-text-body hover:border-accent'"
-            @click="qaCategory = opt.value; clearQAScope()"
+            @click="qaCategory = opt.value"
           >
             {{ opt.label }}
           </button>
