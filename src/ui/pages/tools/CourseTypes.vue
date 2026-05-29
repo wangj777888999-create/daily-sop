@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import Button from '@/ui/components/common/Button.vue'
 import Card from '@/ui/components/common/Card.vue'
+
+const route = useRoute()
+// Courses passed from DailyCheckin that need to be mapped
+const highlightCourses = computed(() => {
+  const h = route.query.highlight
+  if (!h) return new Set<string>()
+  return new Set(String(h).split(',').map(s => s.trim()).filter(Boolean))
+})
 
 interface CourseRecord {
   课程名称: string
@@ -155,6 +164,32 @@ onMounted(loadData)
           <p class="text-sm text-text-light mt-1">管理课程名称与类型的对应关系，月度分析自动加载</p>
         </div>
 
+        <!-- Highlight: courses needing mapping (passed from DailyCheckin) -->
+        <div v-if="highlightCourses.size > 0" class="bg-yellow-50 border border-yellow-300 rounded-lg px-4 py-3">
+          <p class="text-sm text-yellow-800 font-semibold mb-2">⚠️ 以下 {{ highlightCourses.size }} 个课程尚未设置类型，请点击快速处理：</p>
+          <div class="flex flex-wrap gap-2">
+            <template v-for="c in highlightCourses" :key="c">
+              <!-- Already exists: search & locate -->
+              <button
+                v-if="records.some(r => r.课程名称 === c)"
+                class="text-xs px-2.5 py-1 rounded-lg bg-green-50 border border-green-400 text-green-800 font-medium hover:bg-green-100 transition-colors"
+                @click="searchQuery = c"
+                title="课程已存在，点击定位到该行"
+              >
+                🔍 {{ c }}（已存在，点击定位）
+              </button>
+              <!-- Not exists: open add dialog -->
+              <button
+                v-else
+                class="text-xs px-2.5 py-1 rounded-lg bg-yellow-100 border border-yellow-400 text-yellow-900 font-medium hover:bg-yellow-200 transition-colors"
+                @click="showAddDialog = true; newName = c; newType = typeOptions[0] || ''"
+              >
+                + {{ c }}
+              </button>
+            </template>
+          </div>
+        </div>
+
         <!-- Messages -->
         <div v-if="errorMsg" class="bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-sm text-red-700 flex items-center justify-between">
           {{ errorMsg }}
@@ -208,9 +243,12 @@ onMounted(loadData)
                   v-for="(r, i) in filteredRecords"
                   :key="i"
                   class="border-t border-border hover:bg-page-bg/50 transition-colors"
+                  :class="highlightCourses.has(r.课程名称) ? 'bg-yellow-50' : ''"
                 >
                   <td class="px-4 py-2 text-text-light">{{ i + 1 }}</td>
-                  <td class="px-4 py-2 text-text-body">{{ r.课程名称 }}</td>
+                  <td class="px-4 py-2 text-text-body">
+                    <span :class="highlightCourses.has(r.课程名称) ? 'text-yellow-700 font-semibold' : ''">{{ r.课程名称 }}</span>
+                  </td>
                   <td class="px-4 py-2">
                     <select
                       :value="r.类型"

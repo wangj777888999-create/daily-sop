@@ -3,20 +3,27 @@ interface Props {
   variant?: 'primary' | 'secondary'
   size?: 'normal' | 'small'
   icon?: string
+  disabled?: boolean
+  loading?: boolean
 }
 
 withDefaults(defineProps<Props>(), {
   variant: 'primary',
-  size: 'normal'
+  size: 'normal',
+  disabled: false,
+  loading: false,
 })
 </script>
 
 <template>
   <button
-    class="inline-flex items-center gap-1.5 cursor-pointer font-medium select-none
-           transition-all duration-150 ease-spring
-           active:scale-[0.97] active:brightness-95"
+    :disabled="disabled || loading"
+    class="inline-flex items-center gap-1.5 font-medium select-none
+           transition-all duration-150 ease-spring"
     :class="[
+      disabled || loading
+        ? 'opacity-40 cursor-not-allowed'
+        : 'cursor-pointer active:scale-[0.97] active:brightness-95',
       variant === 'primary'
         ? 'bg-gradient-to-b from-accent to-accent-dark text-white border border-accent-dark/50 shadow-button-primary hover:brightness-105'
         : 'bg-chip text-text-body border border-border hover:bg-placeholder/50 hover:shadow-sm',
@@ -25,7 +32,8 @@ withDefaults(defineProps<Props>(), {
         : 'px-3 py-1 text-[11px] rounded-md'
     ]"
   >
-    <span v-if="icon" class="text-[13px]">{{ icon }}</span>
+    <span v-if="loading" class="text-[11px]">⏳</span>
+    <span v-else-if="icon" class="text-[13px]">{{ icon }}</span>
     <slot />
   </button>
 </template>

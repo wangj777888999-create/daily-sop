@@ -7,6 +7,7 @@ import io
 import json
 import logging
 import os
+from pydantic import BaseModel
 
 from tools.daily_checkin import preview_files, process_files, import_checkin
 from tools.db import (
@@ -961,3 +962,226 @@ async def monthly_data_delete(year: int, month: int, file_key: str):
         raise HTTPException(status_code=400, detail=f"未知文件类型: {file_key}")
     deleted = delete_monthly_file(year, month, file_key)
     return {"deleted": deleted}
+
+
+# ──────────────────── 校外课时费计算 ────────────────────
+
+from tools.offcampus_teaching_fee import (
+    load_fee_rules, save_fee_rules,
+    load_new_class_rules, save_new_class_rules,
+    fetch_data, calculate_teaching_fees, export_to_excel as fee_export_excel,
+)
+
+_FEE_OUTPUT_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "offcampus_fee_output"
+)
+os.makedirs(_FEE_OUTPUT_DIR, exist_ok=True)
+
+
+class FetchRequest(BaseModel):
+    class_sql: str
+    finance_sql: str
+
+
+class FetchPageRequest(BaseModel):
+    class_sql: str
+    finance_sql: str
+    table: str = "class"       # "class" | "finance"
+    page: int = 1
+    page_size: int = 50
+    search: str = ""
+
+
+class CalculateRequest(BaseModel):
+    class_sql: str
+    finance_sql: str
+    rules: dict
+    new_class_config: Optional[dict] = None
+
+
+@router.get("/tools/offcampus-teaching-fee/rules")
+async def get_teaching_fee_rules():
+    return load_fee_rules()
+
+
+@router.post("/tools/offcampus-teaching-fee/rules")
+async def save_teaching_fee_rules(body: dict):
+    try:
+        save_fee_rules(body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"保存规则失败: {e}")
+    return {"saved": True}
+
+
+@router.get("/tools/offcampus-teaching-fee/new-class-rules")
+async def get_new_class_rules():
+    return load_new_class_rules()
+
+
+@router.post("/tools/offcampus-teaching-fee/new-class-rules")
+async def save_new_class_rules_endpoint(body: dict):
+    try:
+        save_new_class_rules(body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"保存新开班规则失败: {e}")
+    return {"saved": True}
+
+
+@router.post("/tools/offcampus-teaching-fee/fetch")
+async def fetch_teaching_fee_data(body: FetchRequest):
+    """执行两条 SQL，返回数据预览（前10行）及基本统计"""
+    try:
+        class_df, finance_df, preview = fetch_data(body.class_sql, body.finance_sql)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=f"数据库未连接: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"查询失败: {e}")
+
+    # 从财务明细提取教练列表
+    coaches: list = []
+    for col in finance_df.columns:
+        if col.strip() in ("教练", "教练姓名", "coach_name", "coach"):
+            coaches = sorted(
+                [str(c) for c in finance_df[col].dropna().unique() if str(c).strip()]
+            )
+            break
+
+    # 从财务明细提取所有不重复的课包名称（course_pack_name，排除空值）
+    all_course_packs: list = []
+    for col in finance_df.columns:
+        if col.strip() in ("course_pack_name", "课包名称"):
+            all_course_packs = sorted(
+                finance_df[col].dropna().astype(str)
+                .replace("None", "").replace("nan", "")
+                .loc[lambda s: s != ""].unique().tolist()
+            )
+            break
+
+    # 从上课记录提取所有不重复的课程名称（供新开班配置用）
+    all_course_names: list = []
+    for col in class_df.columns:
+        if col.strip() in ("课程名称", "course_name"):
+            all_course_names = sorted(
+                [str(c) for c in class_df[col].dropna().unique() if str(c).strip()]
+            )
+            break
+
+    return {
+        "class_preview":   preview["class_records"],
+        "finance_preview": preview["finance_records"],
+        "coaches":         coaches,
+        "all_course_packs": all_course_packs,
+        "all_course_names": all_course_names,
+    }
+
+
+@router.post("/tools/offcampus-teaching-fee/fetch-page")
+async def fetch_teaching_fee_page(body: FetchPageRequest):
+    """分页获取上课记录或财务明细，支持全文搜索"""
+    import math
+    try:
+        class_df, finance_df, _ = fetch_data(body.class_sql, body.finance_sql)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=f"数据库未连接: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"查询失败: {e}")
+
+    df = class_df if body.table == "class" else finance_df
+
+    # 全文搜索（跨所有列）
+    if body.search.strip():
+        kw = body.search.strip().lower()
+        mask = None
+        for col in df.columns:
+            col_mask = df[col].astype(str).str.lower().str.contains(kw, na=False)
+            mask = col_mask if mask is None else (mask | col_mask)
+        if mask is not None:
+            df = df[mask]
+
+    total = len(df)
+    page_size = max(1, min(200, body.page_size))
+    page = max(1, body.page)
+    start = (page - 1) * page_size
+    page_df = df.iloc[start:start + page_size]
+
+    # 清理 NaN / None
+    def _clean(v):
+        if v is None:
+            return ""
+        if isinstance(v, float) and math.isnan(v):
+            return ""
+        s = str(v)
+        return "" if s in ("nan", "None", "NaT", "NaN", "<NA>") else s
+
+    rows = [[_clean(v) for v in row] for row in page_df.values.tolist()]
+
+    return {
+        "columns":     list(df.columns),
+        "rows":        rows,
+        "total":       total,
+        "page":        page,
+        "page_size":   page_size,
+        "total_pages": max(1, (total + page_size - 1) // page_size),
+    }
+
+
+@router.post("/tools/offcampus-teaching-fee/calculate")
+async def calculate_fee(body: CalculateRequest):
+    """执行 SQL + 计算课时费，生成 Excel，返回结果 + 文件名"""
+    try:
+        class_df, finance_df, _ = fetch_data(body.class_sql, body.finance_sql)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=f"数据库未连接: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"查询失败: {e}")
+
+    try:
+        result = calculate_teaching_fees(
+            class_df, finance_df, body.rules,
+            new_class_config=body.new_class_config,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"计算失败: {e}")
+
+    # 生成并保存 Excel
+    try:
+        excel_bytes = fee_export_excel(
+            result["coach_results"],
+            result["stats"],
+            attendance_sheets=result.get("attendance_sheets"),
+        )
+        from datetime import datetime
+        filename = f"校外课时费_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        out_path = os.path.join(_FEE_OUTPUT_DIR, filename)
+        with open(out_path, "wb") as f:
+            f.write(excel_bytes)
+        result["filename"] = filename
+    except Exception as e:
+        logger.warning(f"Excel 生成失败: {e}")
+        result["filename"] = None
+
+    return result
+
+
+@router.get("/tools/offcampus-teaching-fee/download/{filename}")
+async def download_teaching_fee(filename: str):
+    safe_name = os.path.basename(filename)
+    path = os.path.join(_FEE_OUTPUT_DIR, safe_name)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    with open(path, "rb") as f:
+        data = f.read()
+    encoded = quote(safe_name)
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded}"},
+    )

@@ -114,7 +114,7 @@ def import_checkin(excel_bytes: bytes, check_date: str = None) -> dict:
                     v = pd.to_numeric(val, errors='coerce')
                     record[en] = 0.0 if pd.isna(v) else float(v)
                 else:
-                    record[en] = str(val)
+                    record[en] = str(val).strip()
 
         # Each record uses its own course_date as check_date; fallback to user-provided date
         if record["course_date"]:
@@ -154,9 +154,9 @@ def import_checkin(excel_bytes: bytes, check_date: str = None) -> dict:
     # Check unmapped course types
     unmapped_courses = []
     try:
-        all_courses = set(r["course_name"] for r in records if r["course_name"])
+        all_courses = set(r["course_name"].strip() for r in records if r["course_name"])
         ct_records = ct_load_all()
-        mapped = {r["课程名称"] for r in ct_records}
+        mapped = {r["课程名称"].strip() for r in ct_records}
         unmapped_courses = sorted(all_courses - mapped)
     except Exception:
         pass
@@ -316,11 +316,11 @@ def process_files(coach_bytes: bytes, finance_bytes: bytes, check_date: str = No
     # 检测未映射课程类型的课程
     unmapped_courses = []
     if '课程名称' in result.columns:
-        all_courses = set(result['课程名称'].dropna().unique())
+        all_courses = set(c.strip() for c in result['课程名称'].dropna().unique())
         try:
             from tools.course_types import load_all
             ct_records = load_all()
-            mapped = {r['课程名称'] for r in ct_records}
+            mapped = {r['课程名称'].strip() for r in ct_records}
             unmapped_courses = sorted(all_courses - mapped)
         except Exception:
             pass

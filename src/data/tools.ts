@@ -61,6 +61,17 @@ export const tools: Tool[] = [
   },
   // ── 校外 ──────────────────────────────────────────
   {
+    id: 'offcampus-teaching-fee',
+    name: '校外课时费计算',
+    description: '从数据库拉取上课记录和财务明细，按球类/课包类型/超时状态计算教练课时费',
+    icon: '◈',
+    color: '#16A34A',
+    tags: ['课时费', '校外', '教练', '财务'],
+    type: 'vue',
+    route: '/tools/offcampus-teaching-fee',
+    category: '校外',
+  },
+  {
     id: 'offcampus-monthly',
     name: '校外月度分析',
     description: '校外校区场地/课时/营收综合分析，含环比对比',

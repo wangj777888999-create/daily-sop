@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import Card from '@/ui/components/common/Card.vue'
 import Button from '@/ui/components/common/Button.vue'
 import SearchBox from '@/ui/components/common/SearchBox.vue'
@@ -54,6 +54,42 @@ const currentDocs = computed(() => {
   if (!q) return all
   return all.filter(d => d.name.toLowerCase().includes(q) || d.tags?.some(t => t.toLowerCase().includes(q)))
 })
+
+// 从文件名中提取年份
+function extractYear(name: string): string {
+  const m = name.match(/20\d{2}/)
+  return m ? m[0] : '其他'
+}
+
+const expandedGroups = ref<Set<string>>(new Set())
+
+const groupedDocs = computed(() => {
+  const map = new Map<string, typeof currentDocs.value>()
+  for (const doc of currentDocs.value) {
+    const year = extractYear(doc.name)
+    if (!map.has(year)) map.set(year, [])
+    map.get(year)!.push(doc)
+  }
+  const sorted = [...map.entries()].sort(([a], [b]) => {
+    if (a === '其他') return 1
+    if (b === '其他') return -1
+    return b.localeCompare(a)
+  })
+  return sorted.map(([year, docs]) => ({ year, label: year === '其他' ? '其他' : `${year} 年`, docs }))
+})
+
+// 文档首次加载完成后默认展开第一组，之后不再干预
+watch(groupedDocs, (groups) => {
+  if (groups.length > 0 && expandedGroups.value.size === 0) {
+    expandedGroups.value = new Set([groups[0].year])
+  }
+}, { once: true })
+
+function toggleGroup(year: string) {
+  const s = new Set(expandedGroups.value)
+  s.has(year) ? s.delete(year) : s.add(year)
+  expandedGroups.value = s
+}
 
 function openUpload() {
   const cat = currentDocCategory()
@@ -234,6 +270,7 @@ onMounted(async () => {
         <SearchBox v-model="docSearchQuery" :placeholder="`搜索${categoryLabels[tabToCategory[activeTab]]}...`" class="flex-1" />
         <Button variant="primary" icon="📤" @click="openUpload">上传文档</Button>
       </div>
+      <!-- loading skeleton -->
       <div v-if="store.loading" class="grid grid-cols-3 gap-2.5">
         <Card v-for="i in 6" :key="i" class="h-[120px] animate-pulse">
           <div class="h-[58px] rounded-md bg-placeholder mb-2" />
@@ -241,6 +278,8 @@ onMounted(async () => {
           <div class="h-2 w-1/2 bg-placeholder rounded" />
         </Card>
       </div>
+
+      <!-- empty -->
       <div v-else-if="currentDocs.length === 0" class="flex-1 flex items-center justify-center">
         <div class="text-center">
           <div class="text-[36px] mb-2">📂</div>
@@ -249,9 +288,26 @@ onMounted(async () => {
           <Button variant="primary" @click="openUpload">📤 上传文档</Button>
         </div>
       </div>
-      <div v-else class="grid grid-cols-3 gap-2.5">
-        <DocumentCard v-for="doc in currentDocs" :key="doc.id" :document="doc"
-          @preview="handlePreview" @download="handleDownload" @delete="handleDelete" />
+
+      <!-- grouped by year-month -->
+      <div v-else class="flex flex-col gap-2">
+        <div v-for="group in groupedDocs" :key="group.year">
+          <!-- group header -->
+          <button
+            class="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-chip transition-colors select-none"
+            @click="toggleGroup(group.year)"
+          >
+            <span class="text-[11px] text-text-light w-3">{{ expandedGroups.has(group.year) ? '▼' : '▶' }}</span>
+            <span class="text-[13px] font-semibold text-text-heading">{{ group.label }}</span>
+            <span class="text-[11px] text-text-light ml-1">{{ group.docs.length }} 份</span>
+          </button>
+
+          <!-- group docs -->
+          <div v-if="expandedGroups.has(group.year)" class="grid grid-cols-3 gap-2.5 mt-1.5 px-1">
+            <DocumentCard v-for="doc in group.docs" :key="doc.id" :document="doc"
+              @preview="handlePreview" @download="handleDownload" @delete="handleDelete" />
+          </div>
+        </div>
       </div>
     </template>
 

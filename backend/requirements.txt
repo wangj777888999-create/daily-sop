@@ -1,4 +1,8 @@
 aiohappyeyeballs==2.6.1
+paramiko==2.12.0
+psycopg2-binary==2.9.12
+pymysql==1.2.0
+sshtunnel==0.4.0
 aiohttp==3.13.5
 aiosignal==1.4.0
 annotated-doc==0.0.4

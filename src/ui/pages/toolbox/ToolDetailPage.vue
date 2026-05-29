@@ -25,6 +25,7 @@ const vueComponent = computed(() => {
     'course-types': () => import('@/ui/pages/tools/CourseTypes.vue'),
     'photo-checkin': () => import('@/ui/pages/tools/PhotoCheckin.vue'),
     'yolo-validation': () => import('@/ui/pages/tools/YoloValidation.vue'),
+    'offcampus-teaching-fee': () => import('@/ui/pages/tools/OffcampusTeachingFee.vue'),
   }
   const loader = componentMap[tool.value.id]
   return loader ? defineAsyncComponent(loader) : null

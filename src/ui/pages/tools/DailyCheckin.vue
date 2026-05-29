@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import Button from '@/ui/components/common/Button.vue'
 import Card from '@/ui/components/common/Card.vue'
 
@@ -68,6 +68,75 @@ const filteredRecords = computed(() => reviewRecords.value.filter(r => {
 const hasFilter = computed(() => !!(filterCoach.value || filterSchool.value || filterStatus.value))
 const hasHistory = computed(() => history.value.length > 0)
 const availableDates = computed(() => [...new Set(history.value.map(b => b.batch_date).filter(Boolean))].sort().reverse())
+const availableDateSet = computed(() => new Set(availableDates.value))
+const selectedDateHasData = computed(() => availableDateSet.value.has(checkDate.value))
+
+// ── Mini calendar ──
+const today = new Date()
+const calYear = ref(today.getFullYear())
+const calMonth = ref(today.getMonth()) // 0-indexed
+
+const CAL_WEEKS = computed(() => {
+  const year = calYear.value
+  const month = calMonth.value
+  const firstDay = new Date(year, month, 1).getDay() // 0=Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const cells: (string | null)[] = Array(firstDay).fill(null)
+  for (let d = 1; d <= daysInMonth; d++) {
+    const mm = String(month + 1).padStart(2, '0')
+    const dd = String(d).padStart(2, '0')
+    cells.push(`${year}-${mm}-${dd}`)
+  }
+  // pad to full weeks
+  while (cells.length % 7 !== 0) cells.push(null)
+  const weeks: (string | null)[][] = []
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7))
+  return weeks
+})
+
+function calPrev() {
+  if (calMonth.value === 0) { calYear.value--; calMonth.value = 11 }
+  else calMonth.value--
+}
+function calNext() {
+  if (calMonth.value === 11) { calYear.value++; calMonth.value = 0 }
+  else calMonth.value++
+}
+
+const CAL_MONTH_LABEL = computed(() => `${calYear.value} 年 ${calMonth.value + 1} 月`)
+
+// Group history by month (YYYY-MM) from batch_date, newest month first
+const historyByMonth = computed(() => {
+  const groups: Record<string, any[]> = {}
+  for (const b of history.value) {
+    const month = (b.batch_date || '').slice(0, 7) // "2026-04"
+    if (!month) continue
+    if (!groups[month]) groups[month] = []
+    groups[month].push(b)
+  }
+  // Sort each group by date descending
+  for (const m of Object.keys(groups)) {
+    groups[m].sort((a, b) => b.batch_date.localeCompare(a.batch_date))
+  }
+  // Return sorted months descending
+  return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]))
+})
+
+const expandedMonths = ref<Set<string>>(new Set())
+function toggleMonth(month: string) {
+  if (expandedMonths.value.has(month)) {
+    expandedMonths.value.delete(month)
+  } else {
+    expandedMonths.value.add(month)
+  }
+  expandedMonths.value = new Set(expandedMonths.value) // trigger reactivity
+}
+// Auto-expand the latest month on load
+watch(historyByMonth, (groups) => {
+  if (groups.length > 0 && expandedMonths.value.size === 0) {
+    expandedMonths.value = new Set([groups[0][0]])
+  }
+}, { immediate: true })
 
 const statusSummary = computed(() => {
   const counts: Record<string, number> = {}
@@ -547,24 +616,64 @@ loadHistory()
             预览数据
           </button>
 
-          <!-- Quick access to existing data -->
+          <!-- Quick access to existing data — mini calendar -->
           <div v-if="hasHistory" class="border-t border-border pt-4 mt-2">
             <h3 class="text-sm font-medium text-text-heading mb-3">查看 / 修改已处理数据</h3>
-            <div class="flex items-center gap-3 flex-wrap">
-              <input v-model="checkDate" type="date" class="border border-border rounded-lg px-3 py-1.5 text-sm" />
-              <Button variant="secondary" :loading="reviewLoading" @click="enterReview()">
-                查看该日数据
-              </Button>
-              <span class="text-xs" style="color:#9C8E82;">有数据的日期：</span>
-              <button
-                v-for="d in availableDates.slice(0, 8)"
-                :key="d"
-                class="text-xs px-2 py-1 rounded border hover:bg-accent hover:text-white hover:border-accent transition-colors"
-                style="border-color:#d1cdc9; color:#6B5F52;"
-                @click="checkDate = d; enterReview(d)"
-              >
-                {{ d }}
-              </button>
+            <div class="border border-border rounded-xl overflow-hidden select-none inline-block">
+              <!-- nav -->
+              <div class="flex items-center justify-between px-3 py-2 bg-page-bg border-b border-border">
+                <button class="w-6 h-6 flex items-center justify-center rounded hover:bg-chip text-text-light text-[13px]" @click="calPrev">‹</button>
+                <span class="text-[12px] font-semibold text-text-heading">{{ CAL_MONTH_LABEL }}</span>
+                <button class="w-6 h-6 flex items-center justify-center rounded hover:bg-chip text-text-light text-[13px]" @click="calNext">›</button>
+              </div>
+              <!-- day headers -->
+              <div class="grid grid-cols-7 bg-chip">
+                <span v-for="d in ['日','一','二','三','四','五','六']" :key="d"
+                  class="text-center text-[10px] text-text-light py-1.5 w-9">{{ d }}</span>
+              </div>
+              <!-- weeks -->
+              <div class="px-1.5 pt-1 pb-0.5 bg-card-bg">
+                <div v-for="(week, wi) in CAL_WEEKS" :key="wi" class="grid grid-cols-7">
+                  <div v-for="(date, di) in week" :key="di" class="flex items-center justify-center p-0.5">
+                    <button
+                      v-if="date"
+                      class="relative w-9 h-8 rounded-lg text-[12px] transition-colors flex items-center justify-center"
+                      :class="[
+                        date === checkDate
+                          ? 'bg-accent text-white font-semibold'
+                          : availableDateSet.has(date)
+                            ? 'hover:bg-accent-light text-text-heading font-medium'
+                            : 'text-text-light cursor-default'
+                      ]"
+                      @click="date && (checkDate = date)"
+                    >
+                      {{ parseInt(date.slice(8)) }}
+                      <span
+                        v-if="availableDateSet.has(date) && date !== checkDate"
+                        class="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-red-400"
+                      />
+                    </button>
+                    <div v-else class="w-9 h-8" />
+                  </div>
+                </div>
+              </div>
+              <!-- footer: selected + action -->
+              <div class="flex items-center justify-between gap-3 px-3 py-2.5 border-t border-border bg-page-bg">
+                <div class="flex items-center gap-2">
+                  <span class="text-[12px] text-text-body font-medium">{{ checkDate }}</span>
+                  <span v-if="selectedDateHasData" class="text-[11px] text-green-600">● 有数据</span>
+                  <span v-else class="text-[11px] text-text-light">暂无数据</span>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="small"
+                  :loading="reviewLoading"
+                  :disabled="!selectedDateHasData"
+                  @click="enterReview()"
+                >
+                  查看该日数据
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -644,23 +753,28 @@ loadHistory()
 
           <!-- Unmapped courses warning -->
           <div v-if="processResult.unmapped_courses?.length" class="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3">
-            <p class="text-sm text-yellow-800 font-medium">
-              有 {{ processResult.unmapped_courses.length }} 个课程未设置类型
-            </p>
-            <p class="text-xs text-yellow-600 mt-1">
-              以下课程在「课程类型划分」中尚无映射，校内月度分析时将无法归类。请前往设置：
-            </p>
-            <div class="flex flex-wrap gap-1.5 mt-2">
-              <span v-for="c in processResult.unmapped_courses" :key="c" class="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
-                {{ c }}
-              </span>
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <p class="text-sm text-yellow-800 font-semibold">
+                  ⚠️ 有 {{ processResult.unmapped_courses.length }} 个课程未设置类型
+                </p>
+                <p class="text-xs text-yellow-600 mt-1">
+                  以下课程在「课程类型划分」中尚无映射，校内月度分析时将无法归类：
+                </p>
+                <div class="flex flex-wrap gap-1.5 mt-2">
+                  <span v-for="c in processResult.unmapped_courses" :key="c"
+                    class="text-xs bg-yellow-100 text-yellow-800 border border-yellow-300 px-2 py-0.5 rounded font-medium">
+                    {{ c }}
+                  </span>
+                </div>
+              </div>
+              <router-link
+                :to="{ path: '/toolbox/course-types', query: { highlight: processResult.unmapped_courses.join(',') } }"
+                class="flex-shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+              >
+                前往设置 →
+              </router-link>
             </div>
-            <router-link
-              to="/toolbox/course-types"
-              class="inline-block mt-2 text-xs text-yellow-700 hover:text-yellow-900 underline"
-            >
-              前往课程类型划分 →
-            </router-link>
           </div>
 
           <div class="flex items-center gap-3">
@@ -828,41 +942,55 @@ loadHistory()
           </p>
         </div>
 
-        <!-- History -->
+        <!-- History grouped by month -->
         <div v-if="history.length > 0" class="border-t border-border pt-4">
           <h3 class="text-sm font-medium text-text-heading mb-3">历史处理记录</h3>
-          <div class="overflow-auto">
-            <table class="w-full text-xs">
-              <thead class="bg-page-bg">
-                <tr>
-                  <th class="px-3 py-2 text-left font-medium text-text-light">批次日期</th>
-                  <th class="px-3 py-2 text-left font-medium text-text-light">教练签到文件</th>
-                  <th class="px-3 py-2 text-left font-medium text-text-light">财务文件</th>
-                  <th class="px-3 py-2 text-left font-medium text-text-light">生成文件</th>
-                  <th class="px-3 py-2 text-center font-medium text-text-light">记录数</th>
-                  <th class="px-3 py-2 text-left font-medium text-text-light">处理时间</th>
-                  <th class="px-3 py-2 text-center font-medium text-text-light">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="b in history" :key="b.id" class="border-t border-border hover:bg-page-bg">
-                  <td class="px-3 py-2">
-                    <button class="text-accent hover:underline text-xs font-medium" @click="enterReview(b.batch_date)">
-                      {{ b.batch_date }}
-                    </button>
-                  </td>
-                  <td class="px-3 py-2 truncate max-w-[200px]">{{ b.coach_file }}</td>
-                  <td class="px-3 py-2 truncate max-w-[200px]">{{ b.finance_file }}</td>
-                  <td class="px-3 py-2 truncate max-w-[200px]">{{ b.output_filename || '-' }}</td>
-                  <td class="px-3 py-2 text-center">{{ b.record_count }}</td>
-                  <td class="px-3 py-2">{{ formatDate(b.created_at) }}</td>
-                  <td class="px-3 py-2 text-center">
-                    <button class="text-accent hover:underline text-xs mr-2" @click="downloadHistory(b.id)">下载</button>
-                    <button class="text-red-500 hover:underline text-xs" @click="deleteHistory(b.id)">删除</button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="flex flex-col gap-2">
+            <div v-for="[month, rows] in historyByMonth" :key="month" class="border border-border rounded-lg overflow-hidden">
+              <!-- month header -->
+              <button
+                class="w-full flex items-center gap-2 px-3 py-2.5 bg-page-bg hover:bg-chip transition-colors text-left"
+                @click="toggleMonth(month)"
+              >
+                <span class="text-[12px] text-text-light w-3">{{ expandedMonths.has(month) ? '▼' : '▶' }}</span>
+                <span class="text-[13px] font-semibold text-text-heading">{{ month }}</span>
+                <span class="text-[11px] text-text-light ml-1">{{ rows.length }} 条记录</span>
+              </button>
+              <!-- table -->
+              <div v-if="expandedMonths.has(month)" class="overflow-auto">
+                <table class="w-full text-xs">
+                  <thead class="bg-chip">
+                    <tr>
+                      <th class="px-3 py-2 text-left font-medium text-text-light">批次日期</th>
+                      <th class="px-3 py-2 text-left font-medium text-text-light">教练签到文件</th>
+                      <th class="px-3 py-2 text-left font-medium text-text-light">财务文件</th>
+                      <th class="px-3 py-2 text-left font-medium text-text-light">生成文件</th>
+                      <th class="px-3 py-2 text-center font-medium text-text-light">记录数</th>
+                      <th class="px-3 py-2 text-left font-medium text-text-light">处理时间</th>
+                      <th class="px-3 py-2 text-center font-medium text-text-light">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="b in rows" :key="b.id" class="border-t border-border hover:bg-page-bg">
+                      <td class="px-3 py-2">
+                        <button class="text-accent hover:underline text-xs font-medium" @click="enterReview(b.batch_date)">
+                          {{ b.batch_date }}
+                        </button>
+                      </td>
+                      <td class="px-3 py-2 truncate max-w-[160px]">{{ b.coach_file }}</td>
+                      <td class="px-3 py-2 truncate max-w-[160px]">{{ b.finance_file }}</td>
+                      <td class="px-3 py-2 truncate max-w-[160px]">{{ b.output_filename || '-' }}</td>
+                      <td class="px-3 py-2 text-center">{{ b.record_count }}</td>
+                      <td class="px-3 py-2">{{ formatDate(b.created_at) }}</td>
+                      <td class="px-3 py-2 text-center whitespace-nowrap">
+                        <button class="text-accent hover:underline text-xs mr-2" @click="downloadHistory(b.id)">下载</button>
+                        <button class="text-red-500 hover:underline text-xs" @click="deleteHistory(b.id)">删除</button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </div>
