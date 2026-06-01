@@ -413,9 +413,10 @@ async def campus_monthly_delete(analysis_id: int):
 
 @router.post("/tools/checkin-consolidation/load")
 async def checkin_consolidation_load(year: int = Form(...), month: int = Form(...)):
-    # 优先加载已整合的 JSON，保留补签等修改；无整合时从 SQLite 加载原始数据
+    # 只有 confirmed 状态才读 JSON 快照（含手动补签修改）；
+    # draft 状态始终从 SQLite 读最新数据，避免旧快照遮盖新导入的签到记录。
     consolidation = get_consolidation(year, month)
-    if consolidation and consolidation.get("filename"):
+    if consolidation and consolidation.get("filename") and consolidation.get("status") == "confirmed":
         try:
             records = load_consolidation_data(consolidation["filename"])
             transformed = load_month_records(records)
@@ -433,7 +434,13 @@ async def checkin_consolidation_load(year: int = Form(...), month: int = Form(..
     if not records:
         raise HTTPException(status_code=400, detail=f"{year}年{month}月无签到数据")
     transformed = load_month_records(records)
-    return {"records": transformed, "count": len(transformed), "from_consolidation": False}
+    return {
+        "records": transformed,
+        "count": len(transformed),
+        "from_consolidation": False,
+        "status": consolidation["status"] if consolidation else None,
+        "consolidation_id": consolidation["id"] if consolidation else None,
+    }
 
 
 @router.post("/tools/checkin-consolidation/save")

@@ -25,7 +25,7 @@ interface CheckinRecord {
   remark: string
 }
 
-const STATUS_OPTIONS = ['已到', '未到', '请假']
+const STATUS_OPTIONS = ['在岗', '未到', '请假']
 
 const step = ref<Step>('select')
 const year = ref(new Date().getFullYear())
@@ -54,7 +54,7 @@ const monthOptions = Array.from({ length: 12 }, (_, i) => ({
 
 // ── 旧状态 → 新状态映射 ──
 function normalizeStatus(s: string): string {
-  if (s === '在岗' || s === '补签') return '已到'
+  if (s === '已到' || s === '补签') return '在岗'
   if (s === '未签到') return '未到'
   return s
 }
@@ -90,7 +90,7 @@ const statusSummary = computed(() => {
 const remarkCount = computed(() => records.value.filter(r => r.remark?.trim()).length)
 
 function statusStyle(status: string): string {
-  if (status === '已到') return 'color:#166534; background:#f0fdf4; border-color:#bbf7d0;'
+  if (status === '在岗') return 'color:#166534; background:#f0fdf4; border-color:#bbf7d0;'
   if (status === '未到') return 'color:#991b1b; background:#fef2f2; border-color:#fecaca;'
   if (status === '请假') return 'color:#92400e; background:#fffbeb; border-color:#fde68a;'
   return 'color:#3D3530; background:#fff; border-color:#d1cdc9;'

@@ -76,6 +76,7 @@ def export_excel(records: List[Dict]) -> bytes:
     ws.append(headers)
 
     center = Alignment(horizontal="center", vertical="center")
+    highlight_fill = PatternFill(start_color='FFFF00', end_color='FFFF00', fill_type='solid')
     modified_fill = PatternFill(start_color='DBEAFE', end_color='DBEAFE', fill_type='solid')
 
     # Column index for "签到状态" and "备注"
@@ -95,7 +96,10 @@ def export_excel(records: List[Dict]) -> bytes:
         ws.append(row)
         for col_idx in range(1, len(headers) + 1):
             ws.cell(row=row_idx, column=col_idx).alignment = center
-        # Highlight status cell if manually modified
+        # 非「在岗」状态 → 黄色高亮；手动修改过的 → 蓝色高亮（优先级更高）
+        status_val = str(r.get('sign_status', '') or '')
+        if status_val and status_val not in ('在岗', '已到'):  # 两者均为正常出勤
+            ws.cell(row=row_idx, column=status_col_idx).fill = highlight_fill
         if remark_col_idx and '[状态已修改' in str(r.get('remark', '') or ''):
             ws.cell(row=row_idx, column=status_col_idx).fill = modified_fill
 
