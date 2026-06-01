@@ -14,7 +14,7 @@ const pageTitle = computed(() => {
     '/home': ['工作台', '首页'],
     '/toolbox': ['工作台', '工具箱'],
     '/policy': ['工作台', '政策报告'],
-    '/analytics': ['工作台', '高级数据分析'],
+    '/analytics': ['工作台', '校园报告'],
     '/database': ['工作台', '数据库连接'],
     '/knowledge': ['工作台', '个人知识库']
   }
@@ -27,8 +27,8 @@ const pageTitle = computed(() => {
     <Sidebar class="flex-shrink-0" />
     <div class="flex flex-col flex-1 min-w-0">
       <TopBar :breadcrumbs="pageTitle" class="flex-shrink-0" />
-      <main class="flex-1 p-xl overflow-y-auto">
-        <div class="animate-fadein">
+      <main class="flex-1 p-xl overflow-y-auto min-h-0">
+        <div class="animate-fadein h-full">
           <slot />
         </div>
       </main>

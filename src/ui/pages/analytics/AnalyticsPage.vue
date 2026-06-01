@@ -15,7 +15,7 @@ function onSchoolSelect(school: School) {
 </script>
 
 <template>
-  <div class="flex h-full gap-0 -m-4">
+  <div class="flex h-full gap-0 -m-xl">
     <!-- Left: school list -->
     <SchoolSidebar
       :selected-school-id="selectedSchool?.id ?? null"
