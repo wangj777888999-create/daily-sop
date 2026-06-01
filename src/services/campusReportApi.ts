@@ -72,7 +72,7 @@ export const campusReportApi = {
   updateSection: (
     schoolId: string,
     sectionId: string,
-    patch: Partial<Pick<Section, 'title' | 'content' | 'order'>>
+    patch: Partial<Pick<Section, 'title' | 'content' | 'order' | 'images'>>
   ): Promise<Section> =>
     put(`${BASE}/schools/${schoolId}/sections/${sectionId}`, patch),
 

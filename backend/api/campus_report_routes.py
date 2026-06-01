@@ -94,6 +94,7 @@ class SectionUpdate(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
     order: Optional[int] = None
+    images: Optional[List[str]] = None
 
 
 # ── School endpoints ───────────────────────────────────────────────────────────
@@ -164,6 +165,8 @@ def update_section(school_id: str, section_id: str, body: SectionUpdate):
         section["content"] = body.content
     if body.order is not None:
         section["order"] = body.order
+    if body.images is not None:
+        section["images"] = body.images
     section["updated_at"] = datetime.now().isoformat()
     _write_json(path, section)
     return section
