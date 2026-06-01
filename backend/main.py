@@ -9,6 +9,7 @@ from api import photo_checkin_routes
 from api import yolo_training_routes
 from api import settings_routes
 from api import database_routes
+from api import campus_report_routes
 from knowledge.storage import load_all_chunks
 from knowledge.indexer import BM25Index
 from knowledge.embedder import embed
@@ -54,3 +55,4 @@ app.include_router(photo_checkin_routes.router, prefix="/api")
 app.include_router(yolo_training_routes.router, prefix="/api")
 app.include_router(settings_routes.router, prefix="/api")
 app.include_router(database_routes.router, prefix="/api")
+app.include_router(campus_report_routes.router, prefix="/api")
