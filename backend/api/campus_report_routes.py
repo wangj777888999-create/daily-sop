@@ -5,6 +5,7 @@ except ImportError:
 
 import json
 import os
+import re
 import shutil
 import uuid
 from datetime import datetime
@@ -23,6 +24,16 @@ INDEX_PATH = os.path.join(DATA_DIR, "index.json")
 
 ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20 MB
+
+
+_SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _safe_segment(value: str, label: str) -> str:
+    """Reject path segments that could escape the data directory."""
+    if not value or not _SAFE_SEGMENT_RE.fullmatch(value) or value in {".", ".."}:
+        raise HTTPException(400, detail=f"非法 {label}: {value}")
+    return value
 
 
 # ── Low-level JSON helpers ─────────────────────────────────────────────────────
@@ -121,6 +132,7 @@ def create_school(body: SchoolCreate):
 
 @router.delete("/campus-reports/schools/{school_id}", status_code=204)
 def delete_school(school_id: str):
+    _safe_segment(school_id, "school_id")
     schools = _load_schools()
     schools = [s for s in schools if s["id"] != school_id]
     _save_schools(schools)
@@ -133,11 +145,13 @@ def delete_school(school_id: str):
 # ── Section endpoints ──────────────────────────────────────────────────────────
 @router.get("/campus-reports/schools/{school_id}/sections")
 def list_sections(school_id: str):
+    _safe_segment(school_id, "school_id")
     return _load_sections(school_id)
 
 
 @router.post("/campus-reports/schools/{school_id}/sections", status_code=201)
 def create_section(school_id: str, body: SectionCreate):
+    _safe_segment(school_id, "school_id")
     _ensure_dirs(school_id)
     existing = _load_sections(school_id)
     section = {
@@ -155,6 +169,8 @@ def create_section(school_id: str, body: SectionCreate):
 
 @router.put("/campus-reports/schools/{school_id}/sections/{section_id}")
 def update_section(school_id: str, section_id: str, body: SectionUpdate):
+    _safe_segment(school_id, "school_id")
+    _safe_segment(section_id, "section_id")
     path = _section_path(school_id, section_id)
     section = _read_json(path, None)
     if section is None:
@@ -174,8 +190,18 @@ def update_section(school_id: str, section_id: str, body: SectionUpdate):
 
 @router.delete("/campus-reports/schools/{school_id}/sections/{section_id}", status_code=204)
 def delete_section(school_id: str, section_id: str):
+    _safe_segment(school_id, "school_id")
+    _safe_segment(section_id, "section_id")
     path = _section_path(school_id, section_id)
-    if os.path.exists(path):
+    section = _read_json(path, None)
+    if section:
+        for filename in section.get("images", []):
+            img_path = os.path.join(DATA_DIR, school_id, "images", filename)
+            if os.path.exists(img_path):
+                try:
+                    os.remove(img_path)
+                except OSError:
+                    pass  # best-effort cleanup
         os.remove(path)
     return JSONResponse(status_code=204, content=None)
 
@@ -183,6 +209,7 @@ def delete_section(school_id: str, section_id: str):
 # ── Image endpoints ────────────────────────────────────────────────────────────
 @router.post("/campus-reports/schools/{school_id}/images", status_code=201)
 async def upload_image(school_id: str, file: UploadFile = File(...)):
+    _safe_segment(school_id, "school_id")
     _ensure_dirs(school_id)
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_IMAGE_EXTS:
@@ -199,6 +226,8 @@ async def upload_image(school_id: str, file: UploadFile = File(...)):
 
 @router.delete("/campus-reports/schools/{school_id}/images/{filename}", status_code=204)
 def delete_image(school_id: str, filename: str):
+    _safe_segment(school_id, "school_id")
+    _safe_segment(filename, "filename")
     path = os.path.join(DATA_DIR, school_id, "images", filename)
     if os.path.exists(path):
         os.remove(path)
@@ -207,6 +236,8 @@ def delete_image(school_id: str, filename: str):
 
 @router.get("/campus-reports/schools/{school_id}/images/{filename}")
 def serve_image(school_id: str, filename: str):
+    _safe_segment(school_id, "school_id")
+    _safe_segment(filename, "filename")
     path = os.path.join(DATA_DIR, school_id, "images", filename)
     if not os.path.exists(path):
         raise HTTPException(404, detail="图片不存在")

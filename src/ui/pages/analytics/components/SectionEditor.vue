@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onBeforeUnmount } from 'vue'
 import { campusReportApi, type Section } from '@/services/campusReportApi'
 
 const props = defineProps<{ schoolId: string; section: Section }>()
@@ -42,6 +42,14 @@ async function save() {
   }
 }
 
+async function flushPendingSave() {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+    await save()
+  }
+}
+
 async function handleFileInput(e: Event) {
   const input = e.target as HTMLInputElement
   const files = Array.from(input.files ?? [])
@@ -77,11 +85,29 @@ async function removeImage(filename: string) {
   emit('updated', updated)
 }
 
-watch(() => props.section, (s) => {
+watch(() => props.section, async (s, prev) => {
+  // If the previous section is being replaced (id changed) and we have a pending edit, flush it first
+  if (prev && prev.id !== s.id && saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+    // Save the previous section's edits using its id, not the new section's
+    try {
+      await campusReportApi.updateSection(props.schoolId, prev.id, {
+        title: title.value,
+        content: content.value,
+      })
+    } catch { /* best-effort */ }
+  }
   title.value = s.title
   content.value = s.content
   images.value = [...s.images]
 }, { deep: true })
+
+onBeforeUnmount(() => {
+  // fire-and-forget; we can't await in a sync unmount hook,
+  // but the promise will still execute and persist the edit
+  flushPendingSave()
+})
 </script>
 
 <template>
